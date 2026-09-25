@@ -122,6 +122,11 @@
   .tabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   .tabs button.add { font-weight: 500; border-style: dashed; background: transparent; }
   .tabs button .flag { font-size: 11px; opacity: .8; margin-left: 6px; }
+  .tabs button .flag.check { background: #F2C94C; color: #3a2c00; opacity: 1; padding: 0 4px; border-radius: 4px; }
+  .copied-note { margin: 8px 0 4px; padding: 8px 10px; border-radius: 8px; background: #FFF4CC; color: #4a3b00; border: 1px solid #F2C94C; font-size: 14px; }
+  .copied { background: #FFF4CC; box-shadow: -8px 0 0 #FFF4CC, 8px 0 0 #FFF4CC; border-left: 4px solid #F2C94C; padding-left: 6px; border-radius: 4px; }
+  .copied::before { content: attr(data-copied); display: block; font-size: 12px; font-weight: 600; color: #6b5300; margin-bottom: 4px; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .copied, :root:not([data-theme="light"]) .copied-note { background: #3d3410; color: #f5e6a8; box-shadow: none; } :root:not([data-theme="light"]) .copied::before { color: #f5e6a8; } }
   .use-ex { background: none; border: 0; padding: 4px 0; margin-top: 2px; color: var(--accent); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: underline; }
   .send-note { max-width: 640px; margin: 0 auto 10px; padding: 10px 12px; border: 1px solid var(--good); background: var(--good-soft); border-radius: 10px; font-size: 14px; overflow-wrap: anywhere; }
   .beam-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -255,11 +260,13 @@
 
   <section class="card">
     <h2 class="beam-head">Surface prep findings <span class="for" id="beamHeading"></span></h2>
+    <div class="copied-note" id="copiedNote" hidden></div>
 
     <div class="field">
       <span class="lbl">Blast cleanliness (SSPC-SP 10 / NACE No. 2)</span>
       <div class="seg" data-seg="clean">
         <button type="button" data-val="pass" data-tone="good" aria-pressed="true">Meets SP-10 and profile</button>
+        <button type="button" data-val="sp5" data-tone="good" aria-pressed="false">Exceeds SP-10 (close to SP-5)</button>
         <button type="button" data-val="fail" data-tone="warn" aria-pressed="false">Does not meet</button>
       </div>
       <div class="sub-fields" id="cleanFailBox" hidden>
@@ -404,6 +411,7 @@
         <button type="button" data-val="pit" data-tone="good" aria-pressed="false">Approved for pit filler</button>
         <button type="button" data-val="inter" data-tone="good" aria-pressed="false">Approved for intermediate coat</button>
         <button type="button" data-val="top" data-tone="good" aria-pressed="false">Approved for top coat</button>
+        <button type="button" data-val="cond" aria-pressed="false">Approved once noted items are fixed</button>
         <button type="button" data-val="hold" data-tone="warn" aria-pressed="false">Hold, fix items first</button>
         <button type="button" data-val="prev" aria-pressed="false">Primer previously applied</button>
       </div>
@@ -439,7 +447,6 @@
   <div class="send-note" id="sendNote" hidden>
     <div><b id="sendHead">Report saved.</b> Email the Word file to <span class="mono" id="sendAddr">zsharon@infinitycorrosiongroup.onmicrosoft.com</span></div>
     <button class="btn primary" id="shareReport" type="button" hidden style="width:100%;margin-top:8px">Send report</button>
-    <div class="warnline" id="sizeWarn" hidden></div>
     <div class="hint" id="shareHint" hidden>Opens your share options. Pick Mail. The address is copied, so tap To and paste it.</div>
     <div class="row" style="margin-top:6px;gap:6px">
       <button class="btn small" id="copyAddr" type="button" style="flex:0 0 auto">Copy address</button>
@@ -681,7 +688,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   const CAPTIONS = ['Surface cleanliness', 'Cleanliness overview', 'Cleanliness tape', 'Profile tape', 'Soluble salts testing', 'Soluble salts test results', 'Atmospheric readings', 'Beam label', 'Missed spot that was marked', 'Rust specks', 'Dust on surface', 'Corrosion', 'Other'];
   const SLOT_ORDER = ['atmos', 'clean', 'profile', 'rust', 'dust', 'salts', 'corr', 'general'];
   const COAT_STEPS = { stripe: 'stripe coat', pit: 'pit filler', inter: 'intermediate coat', top: 'top coat' };
-  const STATUS_TEXT = { skip: '', ok: 'Approved for primer', stripe: 'Approved for stripe coat', pit: 'Approved for pit filler', inter: 'Approved for intermediate coat', top: 'Approved for top coat', hold: 'Hold', prev: 'Primer previously applied' };
+  const STATUS_TEXT = { skip: '', ok: 'Approved for primer', stripe: 'Approved for stripe coat', pit: 'Approved for pit filler', inter: 'Approved for intermediate coat', top: 'Approved for top coat', hold: 'Hold', prev: 'Primer previously applied', cond: 'Approved once noted items are fixed' };
   const PEOPLE = { tom: 'Tom Garcia (Okland)', sean: 'Sean Shelton (Mandros PM)', read: 'Read Arnold (ICG)', chris: 'Chris Sumsion (ICG)' };
   const DRAFT_KEY = 'beamReportDraft2', LOG_KEY = 'beamReportLog', SETTINGS_KEY = 'beamReportSettings';
 
@@ -697,7 +704,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   let active = 0;
   let narrEdited = false;
   let downloadsNs = null;
-  let noPhotoOk = false;
+  let noPhotoOk = false, checkOk = false;
   let removeOk = false;
   let lastDustText = '';
   let DEFAULT_SEG = {}, DEFAULT_TEXT = {};
@@ -710,7 +717,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       seg[name] = pressed ? pressed.dataset.val : null;
       g.addEventListener('click', e => {
         const b = e.target.closest('button'); if (!b) return;
-        const prev = seg[name]; setSeg(name, b.dataset.val);
+        const prev = seg[name]; setSeg(name, b.dataset.val); confirmCopied('seg', name);
         if (name === 'dust' && prev !== b.dataset.val) {
           if (b.dataset.val === 'light' && (!$('dustNote').value.trim() || $('dustNote').value.trim() === lastDustText)) $('dustNote').value = dustDefault();
           if (b.dataset.val === 'other' && $('dustNote').value.trim() === dustDefault()) $('dustNote').value = '';
@@ -768,14 +775,55 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     BEAM_TEXT.forEach(id => { $(id).value = b.text[id] != null ? b.text[id] : (DEFAULT_TEXT[id] || ''); });
     lastDustText = $('dustNote').value.trim();
     photos = atmosPhotos.concat(b.photos || []);
-    renderPhotos(); renderTabs();
+    renderPhotos(); renderTabs(); renderCopied();
+  }
+  function copiedLeft(b) { return b && b.copied ? b.copied.seg.length + b.copied.text.length : 0; }
+  function confirmCopied(kind, key) {
+    const b = beams[active]; if (!b || !b.copied) return;
+    const drop = k => { const i = b.copied.seg.indexOf(k); if (i >= 0) b.copied.seg.splice(i, 1); };
+    const NOTE_OF = { dustNote: 'dust', cleanDetail: 'clean', rustDetail: 'rust', corrDetail: 'corr' };
+    if (kind === 'text') { if (!NOTE_OF[key]) return; drop(NOTE_OF[key]); }
+    else {
+      if (b.copied.seg.indexOf(key) < 0) return;
+      drop(key);
+      if (key === 'profile') { if (seg.profile !== 'yes') drop('profileResult'); else if (b.copied.seg.indexOf('profileResult') < 0 && false) {} }
+      if (key === 'salts' && seg.salts !== 'yes') drop('saltsResult');
+    }
+    if (!copiedLeft(b)) b.copied = null;
+    renderCopied(); renderTabs(); saveDraft();
+  }
+  function copiedBox(kind, key) {
+    const el = kind === 'seg' ? document.querySelector('[data-seg="' + key + '"]') : $(key);
+    if (!el) return null;
+    return el.closest('.field') || el.closest('.sub-fields') || el.parentElement;
+  }
+  function renderCopied() {
+    document.querySelectorAll('.copied').forEach(e => { e.classList.remove('copied'); e.removeAttribute('data-copied'); });
+    const b = beams[active], note = $('copiedNote');
+    if (!b || !b.copied) { note.hidden = true; return; }
+    const msg = 'Copied from ' + b.copied.from + '. Tap to confirm or change.';
+    [['seg', b.copied.seg], ['text', b.copied.text]].forEach(([kind, list]) => list.forEach(k => { const box = copiedBox(kind, k); if (box) { box.classList.add('copied'); box.setAttribute('data-copied', msg); } }));
+    note.hidden = false;
+    note.textContent = 'Answers in yellow were copied from ' + b.copied.from + '. Check each one for this beam: tap the answer to confirm it, or pick a different one. ' + copiedLeft(b) + ' left to check.';
   }
   function currentBeams() { // every beam, with the selected one read live from the form
-    return beams.map((b, i) => i === active ? { seg: formSeg(), text: formText(), photos: photos.filter(p => p.slot !== 'atmos') } : b);
+    return beams.map((b, i) => i === active ? { seg: formSeg(), text: formText(), photos: photos.filter(p => p.slot !== 'atmos'), copied: b.copied } : b);
   }
   function switchTo(i) { if (i === active) return; captureBeam(); loadBeam(i); narrEdited = false; syncNarrUI(); onChange(); }
+  const COPY_SEGS = ['clean', 'profile', 'profileResult', 'rust', 'dust', 'salts', 'saltsResult', 'corr', 'status'];
+  const COPY_TEXT = ['cleanDetail', 'rustDetail', 'dustNote', 'corrDetail'];
   function addBeam() {
-    captureBeam(); beams.push(newBeam()); loadBeam(beams.length - 1);
+    captureBeam();
+    const prev = beams[active], nb = newBeam();
+    if (prev) {
+      const from = beamIdOf(prev) || ('Beam ' + (active + 1));
+      COPY_SEGS.forEach(k => { if (prev.seg[k] != null) nb.seg[k] = prev.seg[k]; });
+      COPY_TEXT.forEach(id => { if ((prev.text[id] || '').trim()) nb.text[id] = prev.text[id]; });
+      // Only mark answers that are on screen for this beam. A note is confirmed together with the answer it belongs to.
+      const sg = COPY_SEGS.filter(k => !(k === 'profileResult' && nb.seg.profile !== 'yes') && !(k === 'saltsResult' && nb.seg.salts !== 'yes'));
+      nb.copied = { seg: sg, text: [], from };
+    }
+    beams.push(nb); loadBeam(beams.length - 1);
     narrEdited = false; syncNarrUI(); onChange();
     $('beamId').focus(); $('beamsCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -798,6 +846,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       btn.textContent = id || ('Beam ' + (i + 1));
       const st = i === active ? seg.status : b.seg.status;
       if (st === 'hold') { const f = document.createElement('span'); f.className = 'flag'; f.textContent = 'HOLD'; btn.appendChild(f); }
+      if (copiedLeft(b)) { const f = document.createElement('span'); f.className = 'flag check'; f.textContent = 'CHECK'; btn.appendChild(f); }
       btn.setAttribute('aria-pressed', String(i === active));
       btn.addEventListener('click', () => switchTo(i));
       wrap.appendChild(btn);
@@ -834,6 +883,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const c = contractorName(), s = b.seg, t = b.text, isBeam = isBeamMode();
     const out = [];
     if (s.clean === 'pass') out.push('The abrasive blast cleanliness meets the SP-10 and profile requirements.');
+    else if (s.clean === 'sp5') out.push('The abrasive blast cleanliness exceeds the SP-10 requirements, more closely resembling SP-5, and meets the profile requirements.');
     else { out.push('The abrasive blast cleanliness does not meet the SP-10 requirements.'); const d = sentence(t.cleanDetail); if (d) out.push(d); }
     if (s.profile === 'yes') {
       const r = readingsOf(t);
@@ -868,6 +918,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const subj = isBeam ? 'The beam is' : 'The inspected areas are';
     if (s.status === 'ok') out.push(subj + ' approved for application of zinc primer.');
     else if (COAT_STEPS[s.status]) out.push(subj + ' approved for application of the ' + COAT_STEPS[s.status] + '.');
+    else if (s.status === 'cond') out.push(subj + ' approved to proceed once the items noted above are corrected.');
     else if (s.status === 'hold') out.push('Zinc primer application is on hold until the items above are corrected and re-inspected.');
     else if (s.status === 'prev') out.push('Primer was previously applied to ' + (isBeam ? 'this beam' : 'the inspected areas') + '. This inspection covers preparation for the next coat.');
     const body = out.join(' ');
@@ -907,6 +958,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       t.getContext('2d').drawImage(c, 0, 0, 400, 300);
       const buf = await blob.arrayBuffer();
       return { blob, buf, thumb: t.toDataURL('image/jpeg', 0.7), caption, custom: '', slot };
+    } finally { URL.revokeObjectURL(url); }
+  }
+  async function shrinkPhoto(src, W, H, q) {
+    const blob = src instanceof Blob ? src : new Blob([src], { type: 'image/jpeg' });
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.drawImage(img, 0, 0, W, H);
+      const out = await new Promise(r => c.toBlob(r, 'image/jpeg', q));
+      return await out.arrayBuffer();
     } finally { URL.revokeObjectURL(url); }
   }
   function orderedPhotos(list) {
@@ -1020,7 +1082,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const d = $('date').value || 'undated';
     let part;
     if (!isBeamMode()) part = 'General';
-    else { const ids = beamIds().map(x => x.replace(/[^A-Za-z0-9]+/g, '')).filter(Boolean); part = ids.length <= 4 ? ids.join('-') : ids[0] + '-to-' + ids[ids.length - 1] + '_' + ids.length + 'beams'; }
+    else { const ids = beamIds().filter(Boolean).slice().sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(x => x.replace(/[^A-Za-z0-9]+/g, '')).filter(Boolean); part = ids.length <= 4 ? ids.join('-') : ids[0] + '-to-' + ids[ids.length - 1] + '_' + ids.length + 'beams'; }
     return 'Inspection_Summary_' + d + '_' + part + (anyHold() ? '_HOLD' : '') + '.docx';
   }
   function updateBar() {
@@ -1033,10 +1095,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function grow(el) { if (el.hidden || el.offsetParent === null) return; el.style.height = 'auto'; el.style.height = (el.scrollHeight + 2) + 'px'; }
   function growAll() { document.querySelectorAll('textarea').forEach(grow); }
   let toastT;
-  function toast(msg) {
+  function toast(msg, ms) {
     let t = document.querySelector('.toast');
     if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
-    t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3500);
+    t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, ms || 3500);
   }
 
   // ---------- photo storage (IndexedDB) so photos survive closing the app ----------
@@ -1085,7 +1147,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   function snapshot() {
     const s = { v: 2, day: todayIso(), seg: { reportType: seg.reportType, round: seg.round, atmos: seg.atmos }, present: presentList(), text: {}, narrEdited, narr: narrEdited ? $('narrEdit').value : '', active,
-      beams: currentBeams().map(b => ({ seg: b.seg, text: b.text })) };
+      beams: currentBeams().map(b => ({ seg: b.seg, text: b.text, copied: b.copied || null })) };
     SHARED_TEXT.forEach(id => s.text[id] = $(id).value);
     return s;
   }
@@ -1094,7 +1156,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     Object.keys(s.seg || {}).forEach(k => { if (document.querySelector('[data-seg="' + k + '"]')) setSeg(k, s.seg[k]); });
     if (s.present) setPresent(s.present);
     SHARED_TEXT.forEach(id => { if (s.text && id in s.text) $(id).value = s.text[id]; });
-    beams = (s.beams && s.beams.length ? s.beams : [{}]).map(b => { const nb = newBeam(); Object.assign(nb.seg, b.seg || {}); Object.assign(nb.text, b.text || {}); if (!keepIds) nb.text.beamId = ''; return nb; });
+    beams = (s.beams && s.beams.length ? s.beams : [{}]).map(b => { const nb = newBeam(); Object.assign(nb.seg, b.seg || {}); Object.assign(nb.text, b.text || {}); if (!keepIds) nb.text.beamId = ''; if (keepIds && b.copied) nb.copied = b.copied; return nb; });
     photos = photos.filter(p => p.slot === 'atmos');
     loadBeam(Math.min(s.active || 0, beams.length - 1));
     narrEdited = !!s.narrEdited;
@@ -1258,7 +1320,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const pr = readingsOf(t), pmn = num($('specMin').value), pmx = num($('specMax').value);
     return {
       BeamID: isBeam ? beamIdOf(b) : 'General', Section: idx + 1,
-      Cleanliness: s.clean === 'pass' ? 'Meets SP-10' : 'Does not meet', CleanlinessNote: s.clean === 'fail' ? (t.cleanDetail || '').trim() : '',
+      Cleanliness: s.clean === 'pass' ? 'Meets SP-10' : s.clean === 'sp5' ? 'Exceeds SP-10 (near SP-5)' : 'Does not meet', CleanlinessNote: s.clean === 'fail' ? (t.cleanDetail || '').trim() : '',
       ProfileMeasured: s.profile === 'yes' ? 'Yes' : 'No', ProfileReadings: s.profile === 'yes' ? pr.map(fmtMils).join(', ') : '',
       ProfileMin: pr.length && s.profile === 'yes' ? fmtMils(Math.min(...pr)) : '', ProfileMax: pr.length && s.profile === 'yes' ? fmtMils(Math.max(...pr)) : '',
       ProfileAvg: pr.length && s.profile === 'yes' ? fmtMils(pr.reduce((a, c) => a + c, 0) / pr.length) : '', ProfileSpec: pmn && pmx ? pmn + ' to ' + pmx : '',
@@ -1294,6 +1356,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const nPhotos = totalPhotos();
     if (!nPhotos && !noPhotoOk) { noPhotoOk = true; toast('No photos added. Tap Make report again to build it without photos.'); setTimeout(() => { noPhotoOk = false; }, 6000); return; }
     noPhotoOk = false;
+    if (isBeam && !checkOk) {
+      const issues = [];
+      all.forEach((b, i) => { const id = beamIdOf(b) || ('Beam ' + (i + 1)); const n = copiedLeft(b); if (n) issues.push(id + ' has ' + n + ' copied answer' + (n > 1 ? 's' : '') + ' not checked'); if (!b.seg.status || b.seg.status === 'skip') issues.push(id + ' has no coating status'); });
+      if (issues.length) { checkOk = true; setTimeout(() => { checkOk = false; }, 8000); toast('Check first: ' + issues.join('. ') + '. Tap Make report again to build it anyway.', 8000); return; }
+    }
+    checkOk = false;
     $('makeBtn').disabled = true; setStatus('Building the Word file…');
     try {
       const atmos = seg.atmos === 'skip' ? null : (function () {
@@ -1315,7 +1383,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         Hold: anyHold() ? 'Yes' : '', Photos: String(nPhotos), MadeOn: new Date().toISOString(),
         Beams: all.map(beamData)
       };
-      const toPhoto = p => ({ data: p.buf || p.blob, caption: p.caption === 'Other' ? (p.custom || '') : p.caption });
+      const capOf = p => p.caption === 'Other' ? (p.custom || '') : p.caption;
+      const toPhoto = p => ({ data: p.buf || p.blob, caption: capOf(p) });
       const sections = all.map((b, i) => ({
         title: isBeam ? 'Beam ' + beamIdOf(b) : 'Findings',
         results: beamResults(b),
@@ -1327,7 +1396,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         line3: isBeam ? 'Beam Identification Number' + (ids.length > 1 ? 's' : '') + ' - ' + ids.join(', ') : 'General Inspection Summary',
         intro: narrEdited ? $('narrEdit').value : buildIntro(), atmos, atmosPhotos: photos.filter(p => p.slot === 'atmos').map(toPhoto), sections, data
       };
-      const blob = await buildDocx(opts, TEMPLATE_B64);
+      let blob = await buildDocx(opts, TEMPLATE_B64);
+      // Keep the file small enough to attach to an email (base64 adds about a third). Shrink photos only if needed.
+      const MAX_BYTES = 14 * 1048576;
+      for (const [W, H, q] of [[800, 600, 0.55], [640, 480, 0.5], [512, 384, 0.45]]) {
+        if (blob.size <= MAX_BYTES) break;
+        setStatus('Making photos smaller so the report fits in an email…');
+        const shrink = async list => { const out = []; for (const p of list) out.push({ data: await shrinkPhoto(p.buf || p.blob, W, H, q), caption: capOf(p) }); return out; };
+        const small = Object.assign({}, opts, {
+          atmosPhotos: await shrink(photos.filter(p => p.slot === 'atmos')),
+          sections: await Promise.all(all.map(async (b, i) => Object.assign({}, sections[i], { photos: await shrink(orderedPhotos(b.photos || [])) })))
+        });
+        blob = await buildDocx(small, TEMPLATE_B64);
+      }
       const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       let shareFile = null;
       try { const f = new File([blob], filename, { type: DOCX }); if (!downloadsNs && navigator.canShare && navigator.canShare({ files: [f] })) shareFile = f; } catch (e) {}
@@ -1337,9 +1418,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       else { ok = await deliver(filename, blob); if (ok && !downloadsNs) toast('Report built. Look for the download prompt, or check Files > Downloads.'); }
       $('shareReport').hidden = !shareFile; $('shareHint').hidden = !shareFile; $('saveReport').hidden = !shareFile;
       $('sendHead').textContent = shareFile ? 'Report ready.' : 'Report saved.';
-      const mb = blob.size / 1048576;
-      $('sizeWarn').hidden = mb < 15;
-      $('sizeWarn').textContent = 'This report is ' + mb.toFixed(1) + ' MB. That may be too big to attach, and Mail may send it as a download link instead, which will not file. If Mail offers Mail Drop, cancel and split this report into two with fewer beams.';
       if (ok) {
         const log = readLog();
         const flag = seg.atmos === 'bad' || all.some(b => b.seg.clean === 'fail' || b.seg.rust === 'some' || b.seg.status === 'hold' || b.seg.corr === 'some' || (b.seg.profile === 'yes' && b.seg.profileResult === 'fail') || (b.seg.salts === 'yes' && b.seg.saltsResult === 'fail') || !!(b.text.notes || '').trim());
@@ -1399,6 +1477,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     $('saveReport').addEventListener('click', () => { if (lastReport) deliver(lastReport.filename, lastReport.blob); });
     $('addContact').addEventListener('click', () => deliver('ICG Beam Reports.vcf', contactCard()));
     exampleInit();
+    COPY_TEXT.forEach(id => $(id).addEventListener('input', () => confirmCopied('text', id)));
     const isField = el => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['button', 'checkbox', 'radio', 'file', 'submit'].includes(el.type)) || el.isContentEditable);
     document.addEventListener('focusin', e => { if (isField(e.target)) document.body.classList.add('typing'); });
     document.addEventListener('focusout', () => { setTimeout(() => { if (!isField(document.activeElement)) document.body.classList.remove('typing'); }, 50); });
