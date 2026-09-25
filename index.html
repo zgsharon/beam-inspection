@@ -120,6 +120,7 @@
   .tabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   .tabs button.add { font-weight: 500; border-style: dashed; background: transparent; }
   .tabs button .flag { font-size: 11px; opacity: .8; margin-left: 6px; }
+  .use-ex { background: none; border: 0; padding: 4px 0; margin-top: 2px; color: var(--accent); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: underline; }
   .send-note { max-width: 640px; margin: 0 auto 10px; padding: 10px 12px; border: 1px solid var(--good); background: var(--good-soft); border-radius: 10px; font-size: 14px; overflow-wrap: anywhere; }
   .beam-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .beam-head .for { color: var(--muted); font-weight: 400; font-size: 14px; }
@@ -434,9 +435,13 @@
 
 <div class="bar">
   <div class="send-note" id="sendNote" hidden>
-    <div><b>Report saved.</b> Email the Word file to <span class="mono" id="sendAddr">zsharon@infinitycorrosiongroup.onmicrosoft.com</span></div>
+    <div><b id="sendHead">Report saved.</b> Email the Word file to <span class="mono" id="sendAddr">zsharon@infinitycorrosiongroup.onmicrosoft.com</span></div>
+    <button class="btn primary" id="shareReport" type="button" hidden style="width:100%;margin-top:8px">Send report</button>
+    <div class="hint" id="shareHint" hidden>Opens your share options. Pick Mail. The address is copied, so tap To and paste it.</div>
     <div class="row" style="margin-top:6px;gap:6px">
       <button class="btn small" id="copyAddr" type="button" style="flex:0 0 auto">Copy address</button>
+      <button class="btn small" id="addContact" type="button" style="flex:0 0 auto">Save address to contacts</button>
+      <button class="btn small" id="saveReport" type="button" hidden style="flex:0 0 auto">Save file instead</button>
       <button class="btn small" id="closeNote" type="button" style="flex:0 0 auto">Done</button>
       <button class="btn small" id="newReport2" type="button" style="flex:0 0 auto">Start next report</button>
     </div>
@@ -1004,7 +1009,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if (!narrEdited) $('narrView').textContent = buildNarrative();
     $('projLine').textContent = $('project').value;
     $('settingsNote').textContent = ($('specMin').value === '' || $('specMax').value === '') ? 'profile spec not set' : $('specMin').value + ' to ' + $('specMax').value + ' mils';
-    updateBar(); saveDraft(); savePhotosSoon();
+    syncExampleLinks(); updateBar(); saveDraft(); savePhotosSoon();
   }
   function beamIds() { return currentBeams().map(beamIdOf); }
   function anyHold() { return currentBeams().some(b => b.seg.status === 'hold'); }
@@ -1033,7 +1038,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   // ---------- photo storage (IndexedDB) so photos survive closing the app ----------
   const PDB_NAME = 'beamReportPhotos', PDB_STORE = 'draft';
-  let photosReady = false, photoSaveT = null;
+  let photosReady = false, photoSaveT = null, photoStoreOff = false;
   function pdb() {
     return new Promise((res, rej) => {
       if (!window.indexedDB) return rej(new Error('no idb'));
@@ -1044,7 +1049,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   async function packPhoto(p) { return { buf: p.buf || await p.blob.arrayBuffer(), type: 'image/jpeg', thumb: p.thumb, caption: p.caption, custom: p.custom || '', slot: p.slot }; }
   function unpackPhoto(o) { return { blob: new Blob([o.buf], { type: o.type || 'image/jpeg' }), buf: o.buf, thumb: o.thumb, caption: o.caption, custom: o.custom || '', slot: o.slot }; }
-  function savePhotosSoon() { if (!photosReady) return; clearTimeout(photoSaveT); photoSaveT = setTimeout(savePhotosNow, 400); }
+  function savePhotosSoon() { if (!photosReady || photoStoreOff) return; clearTimeout(photoSaveT); photoSaveT = setTimeout(savePhotosNow, 400); }
   async function savePhotosNow() {
     if (!photosReady) return;
     try {
@@ -1071,7 +1076,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (skipped) setTimeout(() => toast(skipped + ' photo' + (skipped > 1 ? 's' : '') + ' could not be restored. Please add ' + (skipped > 1 ? 'them' : 'it') + ' again.'), 900);
         else if (n) toast(n + ' photo' + (n > 1 ? 's' : '') + ' restored.');
       }
-    } catch (e) { console.warn('photo load failed', e); toast('Could not load saved photos: ' + ((e && e.message) || e)); }
+    } catch (e) { console.warn('photo storage not available here', e); photoStoreOff = true; }
     photosReady = true;
   }
 
@@ -1213,6 +1218,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   });
 
   // ---------- delivery ----------
+  let lastReport = null;
+  const SEND_TO = 'zsharon@infinitycorrosiongroup.onmicrosoft.com';
+  async function shareReport() {
+    if (!lastReport || !lastReport.file) return;
+    try { navigator.clipboard && navigator.clipboard.writeText(SEND_TO).catch(() => {}); } catch (e) {}
+    try { await navigator.share({ files: [lastReport.file], title: lastReport.filename, text: 'Inspection summary ' + lastReport.filename }); toast('Sent to the share sheet. Check Mail if you did not finish sending.'); }
+    catch (e) {
+      if (e && e.name === 'AbortError') { toast('Not sent. Tap Send report when you are ready.'); return; }
+      toast('Could not open sharing (' + ((e && e.message) || e) + '). Saving the file instead.');
+      await deliver(lastReport.filename, lastReport.blob);
+    }
+  }
+  function contactCard() {
+    return new Blob(['BEGIN:VCARD\r\nVERSION:3.0\r\nN:Reports;ICG Beam;;;\r\nFN:ICG Beam Reports\r\nORG:Infinity Corrosion Group\r\nEMAIL;TYPE=INTERNET:' + SEND_TO + '\r\nNOTE:Send beam inspection Word files here. They file and log automatically.\r\nEND:VCARD\r\n'], { type: 'text/vcard' });
+  }
   async function deliver(filename, data) {
     if (downloadsNs) {
       try { await downloadsNs.save({ filename, data }); return true; }
@@ -1305,8 +1325,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         intro: narrEdited ? $('narrEdit').value : buildIntro(), atmos, atmosPhotos: photos.filter(p => p.slot === 'atmos').map(toPhoto), sections, data
       };
       const blob = await buildDocx(opts, TEMPLATE_B64);
-      const ok = await deliver(filename, blob);
-      if (ok && !downloadsNs) toast('Report built. Look for the download prompt, or check Files > Downloads.');
+      const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      let shareFile = null;
+      try { const f = new File([blob], filename, { type: DOCX }); if (!downloadsNs && navigator.canShare && navigator.canShare({ files: [f] })) shareFile = f; } catch (e) {}
+      lastReport = { blob, filename, file: shareFile };
+      let ok;
+      if (shareFile) { ok = true; toast('Report ready. Tap Send report.'); }
+      else { ok = await deliver(filename, blob); if (ok && !downloadsNs) toast('Report built. Look for the download prompt, or check Files > Downloads.'); }
+      $('shareReport').hidden = !shareFile; $('shareHint').hidden = !shareFile; $('saveReport').hidden = !shareFile;
+      $('sendHead').textContent = shareFile ? 'Report ready.' : 'Report saved.';
       if (ok) {
         const log = readLog();
         const flag = seg.atmos === 'bad' || all.some(b => b.seg.clean === 'fail' || b.seg.rust === 'some' || b.seg.status === 'hold' || b.seg.corr === 'some' || (b.seg.profile === 'yes' && b.seg.profileResult === 'fail') || (b.seg.salts === 'yes' && b.seg.saltsResult === 'fail') || !!(b.text.notes || '').trim());
@@ -1317,6 +1344,32 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     } catch (e) { console.error(e); toast('Something went wrong building the report: ' + ((e && e.message) || e) + '. Take a screenshot and send it to Zach.'); }
     finally { $('makeBtn').disabled = false; updateBar(); }
   });
+
+  // ---------- example wording (from Read's 111 Main reports) ----------
+  const EXAMPLES = {
+    area: 'the bottom or roof level and next level up of scaffolding',
+    cleanDetail: 'There is a lot of spent abrasive and dust that was left behind after initial cleaning. After some discussion a cleaning method was agreed upon including brushing, dry abrasive blasting and small vacuum cleaning.',
+    profDetail: 'Mandros was directed to re-blast these locations and they will be re-tested before zinc primer is applied.',
+    rustDetail: 'in small spots that are quite widespread',
+    saltDetail: 'Mandros was directed to wash and re-blast these locations and they will be re-tested before zinc primer is applied.',
+    corrDetail: 'Some corrosion on the north end and no pits were found that exceed the 0.0625 threshold.',
+    notes: 'Found a spot of chalk marking that was missed on the back side of the beam just above the level of scaffolding deck. This was marked and pointed out and Mandros was instructed to not coat over this spot.'
+  };
+  const exLinks = [];
+  function exampleInit() {
+    Object.keys(EXAMPLES).forEach(id => {
+      const ta = $(id); if (!ta) return;
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'use-ex'; b.textContent = 'Use example';
+      let armed = false;
+      b.addEventListener('click', () => {
+        const txt = EXAMPLES[id].replace(/Mandros/g, contractorName());
+        if (ta.value.trim() && ta.value.trim() !== txt && !armed) { armed = true; toast('Tap Use example again to replace what is in this box.'); setTimeout(() => { armed = false; }, 4000); return; }
+        armed = false; ta.value = txt; ta.dispatchEvent(new Event('input', { bubbles: true })); grow(ta); ta.focus();
+      });
+      ta.insertAdjacentElement('afterend', b); exLinks.push([ta, b]);
+    });
+  }
+  function syncExampleLinks() { exLinks.forEach(([ta, b]) => { b.hidden = ta.hidden; }); }
 
   // ---------- boot ----------
   function start() {
@@ -1339,6 +1392,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     $('newReport').addEventListener('click', startNew);
     $('newReport2').addEventListener('click', () => { newOk = true; startNew(); });
     $('closeNote').addEventListener('click', () => { $('sendNote').hidden = true; });
+    $('shareReport').addEventListener('click', shareReport);
+    $('saveReport').addEventListener('click', () => { if (lastReport) deliver(lastReport.filename, lastReport.blob); });
+    $('addContact').addEventListener('click', () => deliver('ICG Beam Reports.vcf', contactCard()));
+    exampleInit();
     $('copyAddr').addEventListener('click', async () => {
       const a = $('sendAddr').textContent;
       try { await navigator.clipboard.writeText(a); toast('Address copied.'); }
