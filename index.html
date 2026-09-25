@@ -343,6 +343,12 @@
           <div><label class="lbl" for="saltCount">Tests</label><input type="number" id="saltCount" inputmode="numeric" min="1" placeholder="6"></div>
           <div><label class="lbl" for="saltBy">Completed by</label><input type="text" id="saltBy" value="Mandros and ICG"></div>
         </div>
+        <div class="row" style="margin-top:8px">
+          <div><label class="lbl" for="saltCl">Highest chloride <span class="unit">µg/cm², max 7</span></label><input type="number" id="saltCl" inputmode="decimal" step="0.1" min="0" placeholder="optional"></div>
+          <div><label class="lbl" for="saltSO4">Highest sulfate <span class="unit">µg/cm², max 15</span></label><input type="number" id="saltSO4" inputmode="decimal" step="0.1" min="0" placeholder="optional"></div>
+          <div><label class="lbl" for="saltNO3">Highest nitrate <span class="unit">µg/cm², max 10</span></label><input type="number" id="saltNO3" inputmode="decimal" step="0.1" min="0" placeholder="optional"></div>
+        </div>
+        <div class="warnline" id="saltWarn" hidden></div>
         <div class="field">
           <span class="lbl">Result</span>
           <div class="seg" data-seg="saltsResult">
@@ -673,7 +679,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   // Shared (whole report) versus per-beam fields
   const SHARED_TEXT = ['date', 'area', 'presentOther', 'atTime', 'atWeather', 'atAir', 'atRH', 'atDew', 'atSurf'];
-  const BEAM_TEXT = ['beamId', 'cleanDetail', 'rustDetail', 'dustNote', 'prof1', 'prof2', 'prof3', 'prof4', 'profTapes', 'profLocs', 'profBad', 'profDetail', 'saltCount', 'saltBy', 'saltBad', 'saltDetail', 'corrDetail', 'notes'];
+  const BEAM_TEXT = ['beamId', 'cleanDetail', 'rustDetail', 'dustNote', 'prof1', 'prof2', 'prof3', 'prof4', 'profTapes', 'profLocs', 'profBad', 'profDetail', 'saltCount', 'saltBy', 'saltCl', 'saltSO4', 'saltNO3', 'saltBad', 'saltDetail', 'corrDetail', 'notes'];
   const BEAM_SEGS = ['clean', 'profile', 'profileResult', 'rust', 'dust', 'salts', 'saltsResult', 'corr', 'status'];
   const SETTING_IDS = ['client', 'project', 'contractor', 'docTitle', 'specMin', 'specMax'];
 
@@ -842,8 +848,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if (s.salts === 'yes') {
       const n = num(t.saltCount), by = (t.saltBy || '').trim();
       let x = (n || 'Soluble') + (n ? ' soluble' : '') + ' salts tests were completed' + (by ? ' by ' + by : '');
-      if (s.saltsResult === 'pass') x += ' and all levels were found to be within acceptable limits.';
-      else { x += '. ' + locPhrase(t.saltBad, 'Test location') + ' found to be above the acceptable limit.'; const d = sentence(t.saltDetail); if (d) x += ' ' + d; }
+      const sr = saltSentence(t);
+      if (s.saltsResult === 'pass') x += ' and all levels were found to be within acceptable limits.' + (sr ? ' ' + sr : '');
+      else { x += '. ' + locPhrase(t.saltBad, 'Test location') + ' found to be above the acceptable limit.' + (sr ? ' ' + sr : ''); const d = sentence(t.saltDetail); if (d) x += ' ' + d; }
       out.push(x);
     }
     if (s.corr === 'none') out.push('There was no significant corrosion observed.');
@@ -861,6 +868,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function buildNarrative() { return [buildIntro()].concat(currentBeams().map(b => buildBeamText(b, true))).join('\n\n'); }
   function dustDefault() {
     return 'There is a small amount of dust settling on the surfaces of the beams. ' + contractorName() + ' was directed to brush the beams and blow them off with the conventional gun before applying zinc primer.';
+  }
+  const SALT_LIMITS = [['saltCl', 'chloride', 7], ['saltSO4', 'sulfate', 15], ['saltNO3', 'nitrate', 10]];
+  function saltReads(t) { return SALT_LIMITS.map(([k, name, lim]) => ({ name, lim, v: (t[k] === '' || t[k] == null || isNaN(Number(t[k]))) ? null : Number(t[k]) })).filter(r => r.v !== null); }
+  function saltSentence(t) {
+    const r = saltReads(t); if (!r.length) return '';
+    const list = r.map(x => x.name + ' ' + fmtMils(x.v) + ' µg/cm²');
+    const lims = r.map(x => x.lim);
+    const join = a => a.length > 1 ? a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1] : a[0];
+    const over = r.filter(x => x.v > x.lim);
+    return 'The highest reading' + (r.length > 1 ? 's were ' : ' was ') + join(list) + (over.length ? '' : ', within the spec limit' + (r.length > 1 ? 's' : '') + ' of ' + join(lims.map(String)) + ' µg/cm²') + '.';
   }
   function currentNarrative() { return narrEdited ? $('narrEdit').value : buildNarrative(); }
 
@@ -962,8 +979,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     $('dustLabel').textContent = seg.dust === 'other' ? 'Describe the dust and what was done (goes in the report as written)' : 'Dust note (goes in the report as written)';
     const dew = Number($('atDew').value), surf = Number($('atSurf').value);
     const w = $('atWarn');
-    if ($('atDew').value !== '' && $('atSurf').value !== '' && surf - dew < 5) { w.hidden = false; w.textContent = 'Surface temp is only ' + fmtMils(surf - dew) + '°F above the dew point. Most specs require at least 5°F.'; }
-    else w.hidden = true;
+    const aw = [];
+    if ($('atDew').value !== '' && $('atSurf').value !== '' && surf - dew < 5) aw.push('Surface temp is only ' + fmtMils(surf - dew) + '°F above the dew point. The spec primer (Tnemec 394) needs at least 5°F.');
+    const rh = Number($('atRH').value);
+    if ($('atRH').value !== '' && (rh > 90 || rh < 20)) aw.push('Humidity ' + fmtMils(rh) + '% is outside the 20 to 90% range for the spec primer (Tnemec 394).');
+    if ($('atSurf').value !== '' && (surf < 35 || surf > 120)) aw.push('Surface temp ' + fmtMils(surf) + '°F is outside the 35 to 120°F range for the spec primer (Tnemec 394).');
+    w.hidden = !aw.length; w.textContent = aw.join(' ');
+    const sw = $('saltWarn');
+    if (seg.salts === 'yes') {
+      const tt = {}; SALT_LIMITS.forEach(([k]) => tt[k] = $(k).value);
+      const over = saltReads(tt).filter(x => x.v > x.lim);
+      sw.hidden = !over.length;
+      sw.textContent = over.map(x => 'The ' + x.name + ' reading of ' + fmtMils(x.v) + ' is over the ' + x.lim + ' µg/cm² limit.').join(' ') + (over.length && seg.saltsResult === 'pass' ? ' Set Result to Over the limit.' : '');
+    } else sw.hidden = true;
     const r = readings(); const mn = Number($('specMin').value), mx = Number($('specMax').value);
     if (r.length) {
       let t = r.length + ' reading' + (r.length > 1 ? 's' : '') + ', ' + fmtMils(Math.min(...r)) + ' to ' + fmtMils(Math.max(...r)) + ' mils';
@@ -1216,6 +1244,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       Dust: s.dust === 'none' ? 'None' : s.dust === 'light' ? 'Light dust' : 'Other', DustNote: s.dust === 'none' ? '' : (t.dustNote || '').trim(),
       SaltsTested: s.salts === 'yes' ? 'Yes' : 'No', SaltsCount: s.salts === 'yes' ? num(t.saltCount) : '', SaltsBy: s.salts === 'yes' ? (t.saltBy || '').trim() : '',
       SaltsResult: s.salts === 'yes' ? (s.saltsResult === 'pass' ? 'Within limits' : 'Over limit') : '', SaltsOutLocations: s.salts === 'yes' && s.saltsResult === 'fail' ? (t.saltBad || '').trim() : '',
+      SaltsChlorideMax: s.salts === 'yes' ? num(t.saltCl) : '', SaltsSulfateMax: s.salts === 'yes' ? num(t.saltSO4) : '', SaltsNitrateMax: s.salts === 'yes' ? num(t.saltNO3) : '',
       Corrosion: s.corr === 'skip' ? '' : s.corr === 'none' ? 'None significant' : 'Observed', CorrosionNote: s.corr === 'some' ? (t.corrDetail || '').trim() : '',
       Notes: (t.notes || '').trim(),
       CoatingStatus: STATUS_TEXT[s.status] || '', Hold: s.status === 'hold' ? 'Yes' : '', Photos: String((b.photos || []).length)
@@ -1229,7 +1258,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     if (s.salts === 'yes') {
       const n = num(t.saltCount), by = (t.saltBy || '').trim();
-      results.push({ test: 'Soluble salts', readings: (n ? n + ' test' + (n === '1' ? '' : 's') : 'Tested') + (by ? ' by ' + by : ''), min: '', max: '', avg: '', spec: '', result: s.saltsResult, resultText: s.saltsResult === 'pass' ? 'Within limits' : 'Over limit' });
+      const sr = saltReads(t);
+      results.push({ test: 'Soluble salts', readings: (n ? n + ' test' + (n === '1' ? '' : 's') : 'Tested') + (by ? ' by ' + by : '') + (sr.length ? '. Highest: ' + sr.map(x => x.name + ' ' + fmtMils(x.v)).join(', ') + ' µg/cm²' : ''), min: '', max: '', avg: '', spec: 'Chloride 7, sulfate 15, nitrate 10 µg/cm² max', result: s.saltsResult, resultText: s.saltsResult === 'pass' ? 'Within limits' : 'Over limit' });
     }
     return results;
   }
