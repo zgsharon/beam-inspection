@@ -880,7 +880,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.84));
       const t = document.createElement('canvas'); t.width = 400; t.height = 300;
       t.getContext('2d').drawImage(c, 0, 0, 400, 300);
-      return { blob, thumb: t.toDataURL('image/jpeg', 0.7), caption, custom: '', slot };
+      const buf = await blob.arrayBuffer();
+      return { blob, buf, thumb: t.toDataURL('image/jpeg', 0.7), caption, custom: '', slot };
     } finally { URL.revokeObjectURL(url); }
   }
   function orderedPhotos(list) {
@@ -922,7 +923,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         meta.appendChild(sel);
         if (p.caption === 'Other') {
           const inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = 'Type the caption'; inp.value = p.custom;
-          inp.addEventListener('input', () => { p.custom = inp.value; });
+          inp.addEventListener('input', () => { p.custom = inp.value; savePhotosSoon(); });
           meta.appendChild(inp);
         }
         const tools = document.createElement('div'); tools.className = 'tools';
@@ -938,6 +939,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       });
     });
     const mine = photos.filter(p => p.slot !== 'atmos').length;
+    savePhotosSoon();
     $('photoCount').textContent = mine ? '(' + mine + ' photo' + (mine > 1 ? 's' : '') + ' for this beam)' : '';
     updateBar();
   }
@@ -974,7 +976,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if (!narrEdited) $('narrView').textContent = buildNarrative();
     $('projLine').textContent = $('project').value;
     $('settingsNote').textContent = ($('specMin').value === '' || $('specMax').value === '') ? 'profile spec not set' : $('specMin').value + ' to ' + $('specMax').value + ' mils';
-    updateBar(); saveDraft();
+    updateBar(); saveDraft(); savePhotosSoon();
   }
   function beamIds() { return currentBeams().map(beamIdOf); }
   function anyHold() { return currentBeams().some(b => b.seg.status === 'hold'); }
@@ -999,6 +1001,50 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     let t = document.querySelector('.toast');
     if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
     t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3500);
+  }
+
+  // ---------- photo storage (IndexedDB) so photos survive closing the app ----------
+  const PDB_NAME = 'beamReportPhotos', PDB_STORE = 'draft';
+  let photosReady = false, photoSaveT = null;
+  function pdb() {
+    return new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error('no idb'));
+      const r = indexedDB.open(PDB_NAME, 1);
+      r.onupgradeneeded = () => r.result.createObjectStore(PDB_STORE);
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+  }
+  async function packPhoto(p) { return { buf: p.buf || await p.blob.arrayBuffer(), type: 'image/jpeg', thumb: p.thumb, caption: p.caption, custom: p.custom || '', slot: p.slot }; }
+  function unpackPhoto(o) { return { blob: new Blob([o.buf], { type: o.type || 'image/jpeg' }), buf: o.buf, thumb: o.thumb, caption: o.caption, custom: o.custom || '', slot: o.slot }; }
+  function savePhotosSoon() { if (!photosReady) return; clearTimeout(photoSaveT); photoSaveT = setTimeout(savePhotosNow, 400); }
+  async function savePhotosNow() {
+    if (!photosReady) return;
+    try {
+      const rec = { atmos: await Promise.all(photos.filter(p => p.slot === 'atmos').map(packPhoto)),
+        beams: await Promise.all(currentBeams().map(b => Promise.all((b.photos || []).map(packPhoto)))) };
+      const db = await pdb();
+      await new Promise((res, rej) => { const tx = db.transaction(PDB_STORE, 'readwrite'); tx.objectStore(PDB_STORE).put(rec, 'current'); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+      db.close();
+    } catch (e) { console.warn('photo save failed', e); toast('Could not save photos on this phone: ' + ((e && e.message) || e)); }
+  }
+  async function loadPhotos() {
+    try {
+      const db = await pdb();
+      const rec = await new Promise((res, rej) => { const r = db.transaction(PDB_STORE, 'readonly').objectStore(PDB_STORE).get('current'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      db.close();
+      if (rec) {
+        let skipped = 0;
+        const good = list => (list || []).filter(o => { const ok = o && o.buf && o.buf.byteLength > 0; if (!ok) skipped++; return ok; }).map(unpackPhoto);
+        const atm = good(rec.atmos);
+        (rec.beams || []).forEach((list, i) => { if (beams[i]) beams[i].photos = good(list); else skipped += (list || []).length; });
+        photos = atm.concat(beams[active] ? beams[active].photos : []);
+        renderPhotos();
+        const n = totalPhotos();
+        if (skipped) setTimeout(() => toast(skipped + ' photo' + (skipped > 1 ? 's' : '') + ' could not be restored. Please add ' + (skipped > 1 ? 'them' : 'it') + ' again.'), 900);
+        else if (n) toast(n + ' photo' + (n > 1 ? 's' : '') + ' restored.');
+      }
+    } catch (e) { console.warn('photo load failed', e); toast('Could not load saved photos: ' + ((e && e.message) || e)); }
+    photosReady = true;
   }
 
   function snapshot() {
@@ -1216,7 +1262,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         Hold: anyHold() ? 'Yes' : '', Photos: String(nPhotos), MadeOn: new Date().toISOString(),
         Beams: all.map(beamData)
       };
-      const toPhoto = p => ({ data: p.blob, caption: p.caption === 'Other' ? (p.custom || '') : p.caption });
+      const toPhoto = p => ({ data: p.buf || p.blob, caption: p.caption === 'Other' ? (p.custom || '') : p.caption });
       const sections = all.map((b, i) => ({
         title: isBeam ? 'Beam ' + beamIdOf(b) : 'Findings',
         results: beamResults(b),
@@ -1238,7 +1284,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         writeLog(log); renderLog();
         $('sendNote').hidden = false;
       }
-    } catch (e) { console.error(e); toast('Something went wrong building the report.'); }
+    } catch (e) { console.error(e); toast('Something went wrong building the report: ' + ((e && e.message) || e) + '. Take a screenshot and send it to Zach.'); }
     finally { $('makeBtn').disabled = false; updateBar(); }
   });
 
@@ -1284,11 +1330,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     cb.textContent = $('contractor').value || 'Mandros';
     $('contractor').addEventListener('input', () => { cb.textContent = $('contractor').value || 'Mandros'; });
     renderLog(); renderPhotos(); syncNarrUI(); onChange(); growAll(); setTimeout(growAll, 300);
+    loadPhotos();
     if (window.claude && typeof window.claude.use === 'function') {
       window.claude.use('downloads').then(ns => { downloadsNs = ns; }).catch(() => {});
       window.claude.use('sample').then(fn => { sampleFn = fn; $('tidyBtn').hidden = !fn; $('tidyBtn2').hidden = !fn; }).catch(() => {});
     }
   }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { clearTimeout(photoSaveT); savePhotosNow(); } });
   start();
 })();
 </script>
