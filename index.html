@@ -894,7 +894,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const url = URL.createObjectURL(file);
     try {
       const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-      const W = 1024, H = 768;
+      const W = 960, H = 720;
       const c = document.createElement('canvas'); c.width = W; c.height = H;
       const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
       const iw = img.naturalWidth, ih = img.naturalHeight;
@@ -902,7 +902,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const s = portrait ? Math.min(W / iw, H / ih) : Math.max(W / iw, H / ih);
       const dw = iw * s, dh = ih * s;
       g.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.72));
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.6));
       const t = document.createElement('canvas'); t.width = 400; t.height = 300;
       t.getContext('2d').drawImage(c, 0, 0, 400, 300);
       const buf = await blob.arrayBuffer();
