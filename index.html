@@ -81,7 +81,9 @@
   .btn { font: inherit; font-size: 15px; font-weight: 500; min-height: 44px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
   .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
   .btn.small { min-height: 36px; font-size: 13px; padding: 4px 10px; }
-  .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--line); box-shadow: var(--shadow); }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--line); box-shadow: var(--shadow); transform: translate3d(0,0,0); -webkit-transform: translate3d(0,0,0); will-change: transform; }
+  body.typing .bar { display: none; }
+  body.typing .toast { bottom: 16px; }
   .bar .inner { max-width: 640px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }
   .bar .primary { flex: 1; min-height: 50px; font-size: 16px; }
   .bar .status { font-size: 13px; color: var(--muted); flex: 1; }
@@ -437,6 +439,7 @@
   <div class="send-note" id="sendNote" hidden>
     <div><b id="sendHead">Report saved.</b> Email the Word file to <span class="mono" id="sendAddr">zsharon@infinitycorrosiongroup.onmicrosoft.com</span></div>
     <button class="btn primary" id="shareReport" type="button" hidden style="width:100%;margin-top:8px">Send report</button>
+    <div class="warnline" id="sizeWarn" hidden></div>
     <div class="hint" id="shareHint" hidden>Opens your share options. Pick Mail. The address is copied, so tap To and paste it.</div>
     <div class="row" style="margin-top:6px;gap:6px">
       <button class="btn small" id="copyAddr" type="button" style="flex:0 0 auto">Copy address</button>
@@ -891,7 +894,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const url = URL.createObjectURL(file);
     try {
       const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-      const W = 1200, H = 900;
+      const W = 1024, H = 768;
       const c = document.createElement('canvas'); c.width = W; c.height = H;
       const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
       const iw = img.naturalWidth, ih = img.naturalHeight;
@@ -899,7 +902,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const s = portrait ? Math.min(W / iw, H / ih) : Math.max(W / iw, H / ih);
       const dw = iw * s, dh = ih * s;
       g.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.84));
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.72));
       const t = document.createElement('canvas'); t.width = 400; t.height = 300;
       t.getContext('2d').drawImage(c, 0, 0, 400, 300);
       const buf = await blob.arrayBuffer();
@@ -1334,6 +1337,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       else { ok = await deliver(filename, blob); if (ok && !downloadsNs) toast('Report built. Look for the download prompt, or check Files > Downloads.'); }
       $('shareReport').hidden = !shareFile; $('shareHint').hidden = !shareFile; $('saveReport').hidden = !shareFile;
       $('sendHead').textContent = shareFile ? 'Report ready.' : 'Report saved.';
+      const mb = blob.size / 1048576;
+      $('sizeWarn').hidden = mb < 15;
+      $('sizeWarn').textContent = 'This report is ' + mb.toFixed(1) + ' MB. That may be too big to attach, and Mail may send it as a download link instead, which will not file. If Mail offers Mail Drop, cancel and split this report into two with fewer beams.';
       if (ok) {
         const log = readLog();
         const flag = seg.atmos === 'bad' || all.some(b => b.seg.clean === 'fail' || b.seg.rust === 'some' || b.seg.status === 'hold' || b.seg.corr === 'some' || (b.seg.profile === 'yes' && b.seg.profileResult === 'fail') || (b.seg.salts === 'yes' && b.seg.saltsResult === 'fail') || !!(b.text.notes || '').trim());
@@ -1393,6 +1399,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     $('saveReport').addEventListener('click', () => { if (lastReport) deliver(lastReport.filename, lastReport.blob); });
     $('addContact').addEventListener('click', () => deliver('ICG Beam Reports.vcf', contactCard()));
     exampleInit();
+    const isField = el => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['button', 'checkbox', 'radio', 'file', 'submit'].includes(el.type)) || el.isContentEditable);
+    document.addEventListener('focusin', e => { if (isField(e.target)) document.body.classList.add('typing'); });
+    document.addEventListener('focusout', () => { setTimeout(() => { if (!isField(document.activeElement)) document.body.classList.remove('typing'); }, 50); });
     $('copyAddr').addEventListener('click', async () => {
       const a = $('sendAddr').textContent;
       try { await navigator.clipboard.writeText(a); toast('Address copied.'); }
