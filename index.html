@@ -411,9 +411,14 @@
         <button type="button" data-val="pit" data-tone="good" aria-pressed="false">Approved for pit filler</button>
         <button type="button" data-val="inter" data-tone="good" aria-pressed="false">Approved for intermediate coat</button>
         <button type="button" data-val="top" data-tone="good" aria-pressed="false">Approved for top coat</button>
+        <button type="button" data-val="partial" data-tone="good" aria-pressed="false">Approved for partial coating application</button>
         <button type="button" data-val="cond" aria-pressed="false">Approved once noted items are fixed</button>
         <button type="button" data-val="hold" data-tone="warn" aria-pressed="false">Hold, fix items first</button>
         <button type="button" data-val="prev" aria-pressed="false">Primer previously applied</button>
+      </div>
+      <div class="sub-fields" id="statusNoteBox" hidden>
+        <label class="lbl" for="statusNote">Explain the partial approval: which areas or surfaces, which coat, and what is left</label>
+        <textarea id="statusNote" rows="2" class="grow" placeholder="Example: The web and bottom flange were approved for zinc primer. The top flange needs more cleaning and will be inspected again before it is coated."></textarea>
       </div>
       <div class="hint">If any beam in the report is on Hold, _HOLD is added to the file name so it stands out in the folder and the log.</div>
     </div>
@@ -693,13 +698,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   const CAPTIONS = ['Surface cleanliness', 'Cleanliness overview', 'Cleanliness tape', 'Profile tape', 'Soluble salts testing', 'Soluble salts test results', 'Atmospheric readings', 'Beam label', 'Missed spot that was marked', 'Rust specks', 'Dust on surface', 'Corrosion', 'Other'];
   const SLOT_ORDER = ['atmos', 'clean', 'profile', 'rust', 'dust', 'salts', 'corr', 'general'];
   const COAT_STEPS = { stripe: 'stripe coat', pit: 'pit filler', inter: 'intermediate coat', top: 'top coat' };
-  const STATUS_TEXT = { skip: '', ok: 'Approved for primer', stripe: 'Approved for stripe coat', pit: 'Approved for pit filler', inter: 'Approved for intermediate coat', top: 'Approved for top coat', hold: 'Hold', prev: 'Primer previously applied', cond: 'Approved once noted items are fixed' };
+  const STATUS_TEXT = { skip: '', ok: 'Approved for primer', stripe: 'Approved for stripe coat', pit: 'Approved for pit filler', inter: 'Approved for intermediate coat', top: 'Approved for top coat', hold: 'Hold', prev: 'Primer previously applied', cond: 'Approved once noted items are fixed', partial: 'Approved for partial coating application' };
   const PEOPLE = { tom: 'Tom Garcia (Okland)', sean: 'Sean Shelton (Mandros PM)', read: 'Read Arnold (ICG)', chris: 'Chris Sumsion (ICG)' };
   const DRAFT_KEY = 'beamReportDraft2', LOG_KEY = 'beamReportLog', SETTINGS_KEY = 'beamReportSettings';
 
   // Shared (whole report) versus per-beam fields
   const SHARED_TEXT = ['date', 'area', 'presentOther', 'atTime', 'atWeather', 'atAir', 'atRH', 'atDew', 'atSurf'];
-  const BEAM_TEXT = ['beamId', 'cleanDetail', 'rustDetail', 'dustNote', 'prof1', 'prof2', 'prof3', 'prof4', 'profTapes', 'profLocs', 'profBad', 'profDetail', 'saltCount', 'saltBy', 'saltCl', 'saltSO4', 'saltNO3', 'saltBad', 'saltDetail', 'corrDetail', 'notes'];
+  const BEAM_TEXT = ['beamId', 'cleanDetail', 'rustDetail', 'dustNote', 'prof1', 'prof2', 'prof3', 'prof4', 'profTapes', 'profLocs', 'profBad', 'profDetail', 'saltCount', 'saltBy', 'saltCl', 'saltSO4', 'saltNO3', 'saltBad', 'saltDetail', 'corrDetail', 'notes', 'statusNote'];
   const BEAM_SEGS = ['clean', 'profile', 'profileResult', 'rust', 'dust', 'salts', 'saltsResult', 'corr', 'status'];
   const SETTING_IDS = ['client', 'project', 'contractor', 'docTitle', 'specMin', 'specMax'];
 
@@ -786,7 +791,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function confirmCopied(kind, key) {
     const b = beams[active]; if (!b || !b.copied) return;
     const drop = k => { const i = b.copied.seg.indexOf(k); if (i >= 0) b.copied.seg.splice(i, 1); };
-    const NOTE_OF = { dustNote: 'dust', cleanDetail: 'clean', rustDetail: 'rust', corrDetail: 'corr' };
+    const NOTE_OF = { dustNote: 'dust', cleanDetail: 'clean', rustDetail: 'rust', corrDetail: 'corr', statusNote: 'status' };
     if (kind === 'text') { if (!NOTE_OF[key]) return; drop(NOTE_OF[key]); }
     else {
       if (b.copied.seg.indexOf(key) < 0) return;
@@ -816,7 +821,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   function switchTo(i) { if (i === active) return; captureBeam(); loadBeam(i); narrEdited = false; syncNarrUI(); onChange(); }
   const COPY_SEGS = ['clean', 'profile', 'profileResult', 'rust', 'dust', 'salts', 'saltsResult', 'corr', 'status'];
-  const COPY_TEXT = ['cleanDetail', 'rustDetail', 'dustNote', 'corrDetail'];
+  const COPY_TEXT = ['cleanDetail', 'rustDetail', 'dustNote', 'corrDetail', 'statusNote'];
   function addBeam() {
     captureBeam();
     const prev = beams[active], nb = newBeam();
@@ -923,6 +928,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const subj = isBeam ? 'The beam is' : 'The inspected areas are';
     if (s.status === 'ok') out.push(subj + ' approved for application of zinc primer.');
     else if (COAT_STEPS[s.status]) out.push(subj + ' approved for application of the ' + COAT_STEPS[s.status] + '.');
+    else if (s.status === 'partial') { const pn = sentence(t.statusNote); out.push(subj + ' approved for partial coating application.' + (pn ? ' ' + pn : '')); }
     else if (s.status === 'cond') out.push(subj + ' approved to proceed once the items noted above are corrected.');
     else if (s.status === 'hold') out.push('Zinc primer application is on hold until the items above are corrected and re-inspected.');
     else if (s.status === 'prev') out.push('Primer was previously applied to ' + (isBeam ? 'this beam' : 'the inspected areas') + '. This inspection covers preparation for the next coat.');
@@ -1049,6 +1055,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     $('saltsBox').hidden = seg.salts !== 'yes';
     $('saltFailBox').hidden = seg.saltsResult !== 'fail';
     $('corrDetail').hidden = seg.corr !== 'some';
+    $('statusNoteBox').hidden = seg.status !== 'partial';
     $('dustBox').hidden = seg.dust === 'none';
     $('dustReset').hidden = seg.dust !== 'light';
     $('dustLabel').textContent = seg.dust === 'other' ? 'Describe the dust and what was done (goes in the report as written)' : 'Dust note (goes in the report as written)';
@@ -1337,7 +1344,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       SaltsChlorideMax: s.salts === 'yes' ? num(t.saltCl) : '', SaltsSulfateMax: s.salts === 'yes' ? num(t.saltSO4) : '', SaltsNitrateMax: s.salts === 'yes' ? num(t.saltNO3) : '',
       Corrosion: s.corr === 'skip' ? '' : s.corr === 'none' ? 'None significant' : 'Observed', CorrosionNote: s.corr === 'some' ? (t.corrDetail || '').trim() : '',
       Notes: (t.notes || '').trim(),
-      CoatingStatus: STATUS_TEXT[s.status] || '', Hold: s.status === 'hold' ? 'Yes' : '', Photos: String((b.photos || []).length)
+      CoatingStatus: STATUS_TEXT[s.status] || '', CoatingStatusNote: s.status === 'partial' ? (t.statusNote || '').trim() : '', Hold: s.status === 'hold' ? 'Yes' : '', Photos: String((b.photos || []).length)
     };
   }
   function beamResults(b) {
@@ -1363,7 +1370,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     noPhotoOk = false;
     if (isBeam && !checkOk) {
       const issues = [];
-      all.forEach((b, i) => { const id = beamIdOf(b) || ('Beam ' + (i + 1)); const n = copiedLeft(b); if (n) issues.push(id + ' has ' + n + ' copied answer' + (n > 1 ? 's' : '') + ' not checked'); if (!b.seg.status || b.seg.status === 'skip') issues.push(id + ' has no coating status'); });
+      all.forEach((b, i) => { const id = beamIdOf(b) || ('Beam ' + (i + 1)); const n = copiedLeft(b); if (n) issues.push(id + ' has ' + n + ' copied answer' + (n > 1 ? 's' : '') + ' not checked'); if (!b.seg.status || b.seg.status === 'skip') issues.push(id + ' has no coating status'); if (b.seg.status === 'partial' && !(b.text.statusNote || '').trim()) issues.push(id + ' is approved for partial coating but does not say which parts'); });
       if (issues.length) { checkOk = true; setTimeout(() => { checkOk = false; }, 8000); toast('Check first: ' + issues.join('. ') + '. Tap Make report again to build it anyway.', 8000); return; }
     }
     checkOk = false;
