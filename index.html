@@ -625,9 +625,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const prop = (name, val) => '<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="' + (pid++) + '" name="' + esc(name) + '"><vt:lpwstr>' + esc(val == null ? '' : String(val)) + '</vt:lpwstr></property>';
       let add = '';
       Object.keys(opts.data).forEach(k => { if (opts.data[k] == null || typeof opts.data[k] !== 'object') add += prop(k, opts.data[k]); });
-      add += prop('ReportData', JSON.stringify(opts.data));
+      const json = JSON.stringify(opts.data);
+      add += prop('ReportData', json);
+      // Same record again as base64 between markers. This part is stored uncompressed, so the filing flow can find it
+      // in the raw file without unzipping (OneDrive's unzip step refuses reports with more than about 100 parts).
+      const b64 = (typeof Buffer !== 'undefined' && typeof btoa === 'undefined') ? Buffer.from(json, 'utf8').toString('base64') : btoa(unescape(encodeURIComponent(json)));
+      add += prop('ReportDataB64', 'RDB64[' + b64 + ']RDB64');
       cx = cx.replace('</Properties>', add + '</Properties>');
-      zip.file('docProps/custom.xml', cx);
+      zip.file('docProps/custom.xml', cx, { compression: 'STORE' });
     }
 
     let rels = await zip.file('word/_rels/document.xml.rels').async('string');
