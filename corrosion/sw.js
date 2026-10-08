@@ -1,7 +1,7 @@
 // Keeps the app working with no signal.
 // The page itself: try the network first, checking with the server past the browser cache (so updates show right away), fall back to the saved copy
 // after 4 seconds or when offline. Everything else: saved copy first, refreshed in the background.
-const CACHE = 'beam-corrosion-v4';
+const CACHE = 'beam-corrosion-v5';
 const CORE = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-180.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

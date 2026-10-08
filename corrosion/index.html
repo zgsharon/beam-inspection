@@ -316,6 +316,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   .photo .meta button { border: 0; background: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0 6px; }
   .addphoto { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 46px; border: 1px dashed var(--line); border-radius: 10px; color: var(--accent); font-weight: 600; cursor: pointer; margin-top: 8px; }
   .addphoto input { display: none; }
+  .photobtns { display: flex; gap: 8px; }
+  .photobtns .addphoto { flex: 1; }
   .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); z-index: 20; }
   .bar .in { max-width: 640px; margin: 0 auto; display: flex; gap: 8px; align-items: center; }
   .bar .status { flex: 1; font-size: 13px; color: var(--muted); }
@@ -377,7 +379,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         <textarea id="beamNotes" placeholder="Example: Light surface rust along the full length. Taped off two areas with deeper pitting."></textarea></div>
       <div class="field"><span class="lbl">Overview photos (beam label, full beam)</span>
         <div class="photos" id="beamPhotos"></div>
-        <label class="addphoto">+ Add photos<input type="file" accept="image/*" multiple id="beamPhotoIn"></label>
+        <div class="photobtns"><label class="addphoto">Take photo<input type="file" accept="image/*" capture="environment" id="beamCamIn"></label><label class="addphoto">From gallery<input type="file" accept="image/*" multiple id="beamPhotoIn"></label></div>
       </div>
     </div>
 
@@ -433,7 +435,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <textarea class="anote" placeholder="Example: Scattered pitting within the taped area. Deepest pit near the center."></textarea></div>
     <div class="field"><span class="lbl">Photos of this area</span>
       <div class="photos aphotos"></div>
-      <label class="addphoto">+ Add photos<input type="file" accept="image/*" multiple class="aphotoin"></label>
+      <div class="photobtns"><label class="addphoto">Take photo<input type="file" accept="image/*" capture="environment" class="acamin"></label><label class="addphoto">From gallery<input type="file" accept="image/*" multiple class="aphotoin"></label></div>
+      <div class="hint">For close-ups, the phone's own camera app focuses best. Take them there, then use From gallery.</div>
     </div>
   </div>
 </template>
@@ -599,7 +602,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       b.areas.splice(i, 1); save(); renderAreas();
     });
     renderPhotos(q('.aphotos'), a.photos, () => areaName(a, i));
-    q('.aphotoin').addEventListener('change', async e => { await addPhotos(e.target.files, a.photos, () => defaultCaption(a)); e.target.value = ''; renderPhotos(q('.aphotos'), a.photos); });
+    ['.aphotoin', '.acamin'].forEach(sel => q(sel).addEventListener('change', async e => { await addPhotos(e.target.files, a.photos, () => defaultCaption(a)); e.target.value = ''; renderPhotos(q('.aphotos'), a.photos); }));
     return el;
   }
   function defaultCaption(a) { const parts = [a.face ? a.face + ' side' : '', a.elem ? elemOf(a).toLowerCase() : ''].filter(Boolean); const t = typeText(a); const what = t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Corrosion'; return parts.length ? what + ' on ' + parts.join(' ').toLowerCase() : what; }
@@ -609,12 +612,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const url = URL.createObjectURL(file);
     try {
       const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-      const W = 960, H = 720, c = document.createElement('canvas'); c.width = W; c.height = H;
+      const W = 1600, H = 1200, c = document.createElement('canvas'); c.width = W; c.height = H;
       const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
       const iw = img.naturalWidth, ih = img.naturalHeight, portrait = ih > iw;
       const s = portrait ? Math.min(W / iw, H / ih) : Math.max(W / iw, H / ih), dw = iw * s, dh = ih * s;
       g.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.6));
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
       const t = document.createElement('canvas'); t.width = 320; t.height = 240; t.getContext('2d').drawImage(c, 0, 0, 320, 240);
       return { blob, thumb: t.toDataURL('image/jpeg', 0.7) };
     } finally { URL.revokeObjectURL(url); }
@@ -704,7 +707,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const opts = { client: CLIENT, project: PROJECT, docTitle: DOC_TITLE, line3: 'Beam Identification Number - ' + b.id, intro, sections,
       data: { ReportType: 'Corrosion', BeamID: b.id, Date: S.date, Inspector: S.inspector, Areas: s.areas, AreasOver: s.over, MaxDepth: s.max == null ? '' : f3(s.max) } };
     let blob = await buildDocx(opts, TEMPLATE_B64);
-    const steps = [[800, 600, 0.55], [640, 480, 0.5], [512, 384, 0.45]];
+    const steps = [[1280, 960, 0.75], [1024, 768, 0.65], [800, 600, 0.55], [640, 480, 0.5]];
     for (const [W, H, qq] of steps) {
       if (blob.size <= 14 * 1024 * 1024) break;
       for (const sec of sections) for (const p of sec.photos) p.data = await shrink(new Blob([p.data], { type: 'image/jpeg' }), W, H, qq);
@@ -776,7 +779,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   window.addEventListener('popstate', () => { if (history.state && history.state.beam && beamBy(history.state.beam)) openBeam(history.state.beam, false); else showList(); });
   $('beamId').addEventListener('input', () => { const b = beamBy(cur); b.id = $('beamId').value.trim().toUpperCase(); $('beamTitle').textContent = b.id || 'Beam'; save(); });
   $('beamNotes').addEventListener('input', () => { beamBy(cur).notes = $('beamNotes').value; save(); });
-  $('beamPhotoIn').addEventListener('change', async e => { const b = beamBy(cur); await addPhotos(e.target.files, b.photos, () => 'Beam ' + b.id + ' overview'); e.target.value = ''; renderPhotos($('beamPhotos'), b.photos); });
+  ['beamPhotoIn', 'beamCamIn'].forEach(id => $(id).addEventListener('change', async e => { const b = beamBy(cur); await addPhotos(e.target.files, b.photos, () => 'Beam ' + b.id + ' overview'); e.target.value = ''; renderPhotos($('beamPhotos'), b.photos); }));
   $('addArea').addEventListener('click', () => { const b = beamBy(cur); b.areas.push(newArea()); save(); renderAreas(); const all = $('areas').querySelectorAll('.area'); all[all.length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' }); });
   $('barBtn').addEventListener('click', () => { if (cur) makeReports([beamBy(cur)]); else makeReports(S.beams); });
   const clr = $('clearAll');
