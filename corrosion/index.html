@@ -337,10 +337,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
     <div class="card">
       <h2>Today</h2>
-      <div class="field"><span class="lbl">Inspector</span>
+      <div class="field"><span class="lbl">Inspectors (tap everyone on site)</span>
         <div class="chips" id="inspChips">
           <button type="button" data-val="Read Arnold" aria-pressed="false">Read Arnold</button>
           <button type="button" data-val="Chris Sumsion" aria-pressed="false">Chris Sumsion</button>
+          <button type="button" data-val="Erik Llewellyn" aria-pressed="false">Erik Llewellyn</button>
         </div>
       </div>
       <div class="field"><label class="lbl" for="date">Date</label><input type="date" id="date"></div>
@@ -405,8 +406,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <div class="field"><span class="lbl">Part of beam</span>
       <div class="chips aelem">
         <button type="button" data-val="Web" aria-pressed="false">Web</button>
-        <button type="button" data-val="Top flange" aria-pressed="false">Top flange</button>
-        <button type="button" data-val="Bottom flange" aria-pressed="false">Bottom flange</button>
+        <button type="button" data-val="Flange" aria-pressed="false">Flange</button>
         <button type="button" data-val="Underside" aria-pressed="false">Underside</button>
       </div></div>
     <div class="field"><label class="lbl">Where along the beam and size of area</label>
@@ -648,11 +648,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   async function buildBeam(b) {
     const s = beamStatus(b);
-    const who = S.inspector || 'ICG';
+    const il = inspList(), who = !il.length ? 'ICG staff' : il.length > 2 ? il.slice(0, -1).join(', ') + ', and ' + il[il.length - 1] : il.join(' and ');
     let intro = 'On ' + (fmtDate(S.date) || fmtDate(todayIso())) + ', ' + who + ' of Infinity Corrosion Group (ICG) inspected beam ' + b.id + ' for corrosion. ';
-    intro += s.areas === 1 ? 'One corrosion area was documented. ' : s.areas + ' corrosion areas were documented. ';
+    const W = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'], wn = n => W[n] || String(n);
+    intro += s.areas === 1 ? 'One corrosion area was documented. ' : wn(s.areas) + ' corrosion areas were documented. ';
     intro += 'Pits or metal loss deeper than 0.0625 in. (1/16 in.) were measured in more detail. ';
-    if (s.measured) intro += s.over ? (s.over === 1 ? 'One area' : s.over + ' areas') + ' had readings deeper than 0.0625 in. The deepest reading on this beam was ' + f3(s.max) + ' in.' : 'All readings were 0.0625 in. or less. The deepest reading on this beam was ' + f3(s.max) + ' in.';
+    if (s.measured) intro += s.over ? (s.over === 1 ? 'One area' : wn(s.over) + ' areas') + ' had readings deeper than 0.0625 in. The deepest reading on this beam was ' + f3(s.max) + ' in.' : 'All readings were 0.0625 in. or less. The deepest reading on this beam was ' + f3(s.max) + ' in.';
     if (b.notes.trim()) intro += '\n\n' + b.notes.trim();
     const results = [], sections = [], missing = [];
     const loadList = async list => { const out = []; for (const p of list) { const o = await photoOf(p.pid); if (o) out.push({ data: await o.blob.arrayBuffer(), caption: p.caption }); else missing.push(p); } return out; };
@@ -715,7 +716,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   let warned = '';
   async function makeReports(list) {
     if (busy) return;
-    if (!S.inspector) { toast('Tap your name at the top of the beam list first.'); if (cur) { history.back(); } return; }
+    if (!S.inspector) { toast('Tap the inspector names at the top of the beam list first.'); if (cur) { history.back(); } return; }
     const probs = []; list.forEach(b => problems(b).forEach(p => probs.push((b.id || 'A beam') + ' ' + p)));
     const key = probs.join('|');
     if (probs.length && warned !== key) { warned = key; toast(probs.slice(0, 2).join('. ') + (probs.length > 2 ? '. And ' + (probs.length - 2) + ' more.' : '.') + ' Tap again to make the report anyway.', 6000); return; }
@@ -744,7 +745,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 
   // ---------- wiring ----------
-  $('inspChips').addEventListener('click', e => { const btn = e.target.closest('button'); if (!btn) return; S.inspector = btn.dataset.val; $('inspChips').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === btn))); save(); });
+  function inspList() { return String(S.inspector || '').split(' and ').filter(Boolean); }
+  function drawInsp() { const l = inspList(); $('inspChips').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(l.includes(x.dataset.val)))); }
+  $('inspChips').addEventListener('click', e => { const btn = e.target.closest('button'); if (!btn) return; let l = inspList(); l = l.includes(btn.dataset.val) ? l.filter(x => x !== btn.dataset.val) : l.concat(btn.dataset.val); S.inspector = l.join(' and '); drawInsp(); save(); });
   $('date').addEventListener('input', () => { S.date = $('date').value; save(); });
   $('addBeam').addEventListener('click', addBeam);
   $('newBeam').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addBeam(); } });
@@ -768,7 +771,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if (saved && saved.beams) S = saved;
     if (!S.date) S.date = todayIso();
     $('date').value = S.date;
-    $('inspChips').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.val === S.inspector)));
+    drawInsp();
     history.replaceState({}, '');
     renderList();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
