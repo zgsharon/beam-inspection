@@ -414,7 +414,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         <button type="button" data-val="Web" aria-pressed="false">Web</button>
         <button type="button" data-val="Flange" aria-pressed="false">Flange</button>
         <button type="button" data-val="Underside" aria-pressed="false">Underside</button>
-      </div></div>
+        <button type="button" data-val="Other" aria-pressed="false">Other</button>
+      </div>
+      <input type="text" class="aelemother" placeholder="Which part? Example: stiffener plate" style="margin-top:8px" hidden></div>
     <div class="field"><label class="lbl">Where along the beam and size of area</label>
       <input type="text" class="awhere" placeholder="Example: 3 ft from east end, about 12 in. x 6 in."></div>
     <div class="field"><span class="lbl">Readings (inches)</span>
@@ -464,8 +466,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // ---------- model helpers ----------
   const beamBy = id => S.beams.find(b => b.uid === id);
   function newArea() { return { uid: uid(), types: [], face: '', elem: '', where: '', nominal: '', readings: [{ d: '', ut: '' }], note: '', photos: [] }; }
+  function elemOf(a) { return a.elem === 'Other' ? String(a.elemOther || '').trim() || 'other part' : a.elem; }
   function typeText(a) { const t = (a.types || []).map(x => x.toLowerCase()); return t.length > 1 ? t.slice(0, -1).join(', ') + ' and ' + t[t.length - 1] : (t[0] || ''); }
-  function areaName(a, i) { const parts = [a.face ? a.face + ' side' : '', a.elem ? a.elem.toLowerCase() : ''].filter(Boolean); const t = typeText(a); return 'Area ' + (i + 1) + (parts.length ? ': ' + parts.join(', ') : '') + (t ? ' (' + t + ')' : ''); }
+  function areaName(a, i) { const parts = [a.face ? a.face + ' side' : '', a.elem ? elemOf(a).toLowerCase() : ''].filter(Boolean); const t = typeText(a); return 'Area ' + (i + 1) + (parts.length ? ': ' + parts.join(', ') : '') + (t ? ' (' + t + ')' : ''); }
   // returns list of {d, ut, loss, depth (the governing value)}
   function areaValues(a) {
     const nom = num(a.nominal), out = [];
@@ -544,6 +547,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       g.addEventListener('click', e => { const btn = e.target.closest('button'); if (!btn) return; a[key] = a[key] === btn.dataset.val ? '' : btn.dataset.val; g.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.val === a[key]))); title(); save(); });
     };
     chips('.aface', 'face'); chips('.aelem', 'elem');
+    const eo = q('.aelemother');
+    const showEo = () => { eo.hidden = a.elem !== 'Other'; };
+    eo.value = a.elemOther || ''; showEo();
+    q('.aelem').addEventListener('click', () => { showEo(); if (a.elem === 'Other') eo.focus(); });
+    eo.addEventListener('input', () => { a.elemOther = eo.value; title(); save(); });
     if (!a.types) a.types = [];
     const tg = q('.atype');
     const drawT = () => tg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(a.types.includes(x.dataset.val))));
@@ -594,7 +602,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     q('.aphotoin').addEventListener('change', async e => { await addPhotos(e.target.files, a.photos, () => defaultCaption(a)); e.target.value = ''; renderPhotos(q('.aphotos'), a.photos); });
     return el;
   }
-  function defaultCaption(a) { const parts = [a.face ? a.face + ' side' : '', a.elem ? a.elem.toLowerCase() : ''].filter(Boolean); const t = typeText(a); const what = t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Corrosion'; return parts.length ? what + ' on ' + parts.join(' ').toLowerCase() : what; }
+  function defaultCaption(a) { const parts = [a.face ? a.face + ' side' : '', a.elem ? elemOf(a).toLowerCase() : ''].filter(Boolean); const t = typeText(a); const what = t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Corrosion'; return parts.length ? what + ' on ' + parts.join(' ').toLowerCase() : what; }
 
   // ---------- photos ----------
   async function processFile(file) {
@@ -680,7 +688,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         avg: w.length ? f3(w.reduce((p, c) => p + c, 0) / w.length) : '', spec: '≤ 0.0625', result: st.kind === 'over' ? 'fail' : 'pass',
         resultText: st.kind === 'over' ? 'Over criterion' : st.kind === 'ok' ? 'Within' : 'Not measured' });
       let narr = '';
-      const loc = [a.face ? 'the ' + a.face.toLowerCase() + ' side' : '', a.elem ? 'the ' + a.elem.toLowerCase() : ''].filter(Boolean).join(', ');
+      const loc = [a.face ? 'the ' + a.face.toLowerCase() + ' side' : '', a.elem ? 'the ' + elemOf(a).toLowerCase() : ''].filter(Boolean).join(', ');
       if (typeText(a)) narr += 'Damage type: ' + typeText(a) + '. ';
       narr += 'This area is on ' + (loc || 'the beam') + (a.where.trim() ? ', ' + a.where.trim().replace(/[.]$/, '') : '') + '. ';
       if (v.length) {
