@@ -345,7 +345,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         </div>
       </div>
       <div class="field"><label class="lbl" for="date">Date</label><input type="date" id="date"></div>
-      <div class="crit">Criterion: pits or metal loss deeper than <b>0.0625 in.</b> (1/16 in.) get detailed measurement.</div>
+      <div class="crit">Criterion: pits, gouges or metal loss deeper than <b>0.0625 in.</b> (1/16 in.) get detailed measurement.</div>
     </div>
 
     <div class="card">
@@ -396,6 +396,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <template id="areaTpl">
   <div class="area">
     <div class="area-head"><h3 class="atitle">Area 1</h3><button type="button" class="btn small danger adel">Delete area</button></div>
+    <div class="field"><span class="lbl">Type of damage (tap all that apply)</span>
+      <div class="chips atype">
+        <button type="button" data-val="Corrosion pits" aria-pressed="false">Corrosion pits</button>
+        <button type="button" data-val="Gouge" aria-pressed="false">Gouge</button>
+        <button type="button" data-val="Delamination" aria-pressed="false">Delamination</button>
+      </div></div>
     <div class="field"><span class="lbl">Side of beam</span>
       <div class="chips aface">
         <button type="button" data-val="North" aria-pressed="false">North</button>
@@ -412,13 +418,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <div class="field"><label class="lbl">Where along the beam and size of area</label>
       <input type="text" class="awhere" placeholder="Example: 3 ft from east end, about 12 in. x 6 in."></div>
     <div class="field"><span class="lbl">Readings (inches)</span>
-      <div class="rdh"><span></span><span>Pit depth</span><span>UT thickness</span><span></span></div>
+      <div class="rdh"><span></span><span>Depth gauge</span><span>UT thickness</span><span></span></div>
       <div class="rds"></div>
       <button type="button" class="btn small ardadd">+ Add reading</button>
       <div class="rowflex" style="margin-top:8px">
         <div><label class="lbl" style="font-size:13px">Original thickness for UT (optional)</label><input type="text" inputmode="decimal" class="anom" placeholder="Example: 0.375"></div>
       </div>
-      <div class="hint">Enter a pit depth, a UT reading, or both. UT metal loss is figured from the original thickness.</div>
+      <div class="hint">Enter a depth gauge reading (pit, gouge or delamination), a UT reading, or both. UT metal loss is figured from the original thickness.</div>
       <div class="verdict none averdict"></div>
     </div>
     <div class="field"><label class="lbl">Notes on this area (optional)</label>
@@ -457,8 +463,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   // ---------- model helpers ----------
   const beamBy = id => S.beams.find(b => b.uid === id);
-  function newArea() { return { uid: uid(), face: '', elem: '', where: '', nominal: '', readings: [{ d: '', ut: '' }], note: '', photos: [] }; }
-  function areaName(a, i) { const parts = [a.face ? a.face + ' side' : '', a.elem ? a.elem.toLowerCase() : ''].filter(Boolean); return 'Area ' + (i + 1) + (parts.length ? ': ' + parts.join(', ') : ''); }
+  function newArea() { return { uid: uid(), types: [], face: '', elem: '', where: '', nominal: '', readings: [{ d: '', ut: '' }], note: '', photos: [] }; }
+  function typeText(a) { const t = (a.types || []).map(x => x.toLowerCase()); return t.length > 1 ? t.slice(0, -1).join(', ') + ' and ' + t[t.length - 1] : (t[0] || ''); }
+  function areaName(a, i) { const parts = [a.face ? a.face + ' side' : '', a.elem ? a.elem.toLowerCase() : ''].filter(Boolean); const t = typeText(a); return 'Area ' + (i + 1) + (parts.length ? ': ' + parts.join(', ') : '') + (t ? ' (' + t + ')' : ''); }
   // returns list of {d, ut, loss, depth (the governing value)}
   function areaValues(a) {
     const nom = num(a.nominal), out = [];
@@ -537,6 +544,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       g.addEventListener('click', e => { const btn = e.target.closest('button'); if (!btn) return; a[key] = a[key] === btn.dataset.val ? '' : btn.dataset.val; g.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.val === a[key]))); title(); save(); });
     };
     chips('.aface', 'face'); chips('.aelem', 'elem');
+    if (!a.types) a.types = [];
+    const tg = q('.atype');
+    const drawT = () => tg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(a.types.includes(x.dataset.val))));
+    drawT();
+    tg.addEventListener('click', e => { const btn = e.target.closest('button'); if (!btn) return; const v = btn.dataset.val; a.types = a.types.includes(v) ? a.types.filter(x => x !== v) : a.types.concat(v); drawT(); title(); save(); });
     q('.awhere').value = a.where; q('.awhere').addEventListener('input', e => { a.where = e.target.value; save(); });
     q('.anote').value = a.note; q('.anote').addEventListener('input', e => { a.note = e.target.value; save(); });
     q('.anom').value = a.nominal; q('.anom').addEventListener('input', e => { a.nominal = e.target.value; verdict(); save(); });
@@ -582,7 +594,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     q('.aphotoin').addEventListener('change', async e => { await addPhotos(e.target.files, a.photos, () => defaultCaption(a)); e.target.value = ''; renderPhotos(q('.aphotos'), a.photos); });
     return el;
   }
-  function defaultCaption(a) { const parts = [a.face ? a.face + ' side' : '', a.elem ? a.elem.toLowerCase() : ''].filter(Boolean); return parts.length ? 'Corrosion on ' + parts.join(' ') : 'Corrosion'; }
+  function defaultCaption(a) { const parts = [a.face ? a.face + ' side' : '', a.elem ? a.elem.toLowerCase() : ''].filter(Boolean); const t = typeText(a); const what = t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Corrosion'; return parts.length ? what + ' on ' + parts.join(' ').toLowerCase() : what; }
 
   // ---------- photos ----------
   async function processFile(file) {
@@ -652,7 +664,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     let intro = 'On ' + (fmtDate(S.date) || fmtDate(todayIso())) + ', ' + who + ' of Infinity Corrosion Group (ICG) inspected beam ' + b.id + ' for corrosion. ';
     const W = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'], wn = n => W[n] || String(n);
     intro += s.areas === 1 ? 'One corrosion area was documented. ' : wn(s.areas) + ' corrosion areas were documented. ';
-    intro += 'Pits or metal loss deeper than 0.0625 in. (1/16 in.) were measured in more detail. ';
+    intro += 'Pits, gouges or metal loss deeper than 0.0625 in. (1/16 in.) were measured in more detail. ';
     if (s.measured) intro += s.over ? (s.over === 1 ? 'One area' : wn(s.over) + ' areas') + ' had readings deeper than 0.0625 in. The deepest reading on this beam was ' + f3(s.max) + ' in.' : 'All readings were 0.0625 in. or less. The deepest reading on this beam was ' + f3(s.max) + ' in.';
     if (b.notes.trim()) intro += '\n\n' + b.notes.trim();
     const results = [], sections = [], missing = [];
@@ -662,16 +674,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     for (let i = 0; i < b.areas.length; i++) {
       const a = b.areas[i], v = areaValues(a), st = areaStatus(a), name = areaName(a, i);
       const nom = num(a.nominal);
-      const rdText = v.map(x => x.d != null && x.ut != null ? f3(x.d) + ' pit / UT ' + f3(x.ut) : x.d != null ? f3(x.d) : 'UT ' + f3(x.ut) + (x.loss != null ? ' (loss ' + f3(x.loss) + ')' : '')).join(', ');
+      const rdText = v.map(x => x.d != null && x.ut != null ? f3(x.d) + ' depth / UT ' + f3(x.ut) : x.d != null ? f3(x.d) : 'UT ' + f3(x.ut) + (x.loss != null ? ' (loss ' + f3(x.loss) + ')' : '')).join(', ');
       const w = v.map(x => x.worst).filter(x => x != null);
       results.push({ test: name, readings: rdText || 'No readings', min: w.length ? f3(Math.min(...w)) : '', max: w.length ? f3(Math.max(...w)) : '',
         avg: w.length ? f3(w.reduce((p, c) => p + c, 0) / w.length) : '', spec: '≤ 0.0625', result: st.kind === 'over' ? 'fail' : 'pass',
         resultText: st.kind === 'over' ? 'Over criterion' : st.kind === 'ok' ? 'Within' : 'Not measured' });
       let narr = '';
       const loc = [a.face ? 'the ' + a.face.toLowerCase() + ' side' : '', a.elem ? 'the ' + a.elem.toLowerCase() : ''].filter(Boolean).join(', ');
+      if (typeText(a)) narr += 'Damage type: ' + typeText(a) + '. ';
       narr += 'This area is on ' + (loc || 'the beam') + (a.where.trim() ? ', ' + a.where.trim().replace(/[.]$/, '') : '') + '. ';
       if (v.length) {
-        narr += v.length + ' reading' + (v.length > 1 ? 's were' : ' was') + ' taken. ';
+        narr += wn(v.length) + ' reading' + (v.length > 1 ? 's were' : ' was') + ' taken. ';
         if (nom != null && v.some(x => x.ut != null)) narr += 'UT metal loss is based on an original thickness of ' + f3(nom) + ' in. ';
         narr += st.kind === 'over' ? 'The deepest reading was ' + f3(st.max) + ' in., which is over the 0.0625 in. criterion.' : st.kind === 'ok' ? 'The deepest reading was ' + f3(st.max) + ' in., within the 0.0625 in. criterion.' : '';
       } else narr += 'No readings were recorded for this area.';
@@ -696,7 +709,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const out = [];
     if (!b.id) out.push('has no beam number');
     if (!b.areas.length) out.push('has no corrosion areas');
-    b.areas.forEach((a, i) => { if (!a.face || !a.elem) out.push('Area ' + (i + 1) + ' is missing the side or part of beam'); });
+    b.areas.forEach((a, i) => { if (!a.face || !a.elem) out.push('Area ' + (i + 1) + ' is missing the side or part of beam'); if (!(a.types || []).length) out.push('Area ' + (i + 1) + ' has no type of damage picked'); });
     return out;
   }
   let busy = false;
