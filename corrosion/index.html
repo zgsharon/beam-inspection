@@ -724,9 +724,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return out;
   }
   let busy = false;
-  async function deliver(files) {
+  async function deliver(files, title) {
     if (navigator.canShare && navigator.canShare({ files: files.map(f => f.file) })) {
-      try { await navigator.share({ files: files.map(f => f.file), title: files.length === 1 ? files[0].filename : 'Beam corrosion reports' }); return true; }
+      try { await navigator.share({ files: files.map(f => f.file), title: title || (files.length === 1 ? files[0].filename : 'Beam corrosion reports') }); return true; }
       catch (e) { if (e && e.name === 'AbortError') { toast('Not sent. Tap again when ready.'); return false; } }
     }
     for (const f of files) {
@@ -748,11 +748,31 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     busy = true; $('barBtn').disabled = true; const old = $('barBtn').textContent; $('barBtn').textContent = 'Making...';
     try {
       const files = [];
-      for (const b of list) files.push(await buildBeam(b));
-      const ok = await deliver(files);
-      if (ok) { const t = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); list.forEach(b => b.made = t); save(); }
+      for (let i = 0; i < list.length; i++) { $('barBtn').textContent = 'Making ' + (i + 1) + ' of ' + list.length + '...'; const f = await buildBeam(list[i]); f.beam = list[i]; files.push(f); }
+      // Keep each email under the size where iPhone Mail switches to Mail Drop links (about 20 MB).
+      const MAX = (window.__maxMB || 15) * 1024 * 1024, batches = [];
+      let curB = [], size = 0;
+      files.forEach(f => { if (curB.length && size + f.blob.size > MAX) { batches.push(curB); curB = []; size = 0; } curB.push(f); size += f.blob.size; });
+      if (curB.length) batches.push(curB);
+      pending = { batches, idx: 0 };
+      busy = false;
+      await sendNext();
     } catch (e) { console.error(e); toast('Could not make the report: ' + (e.message || e), 6000); }
-    busy = false; $('barBtn').disabled = false; $('barBtn').textContent = old; if (!cur) renderList(); else updateBar();
+    busy = false; $('barBtn').disabled = false; if (!cur) renderList(); else updateBar();
+  }
+  let pending = null;
+  async function sendNext() {
+    if (!pending) return;
+    const { batches, idx } = pending, batch = batches[idx], n = batches.length;
+    const ok = await deliver(batch, n > 1 ? 'Beam corrosion reports (' + (idx + 1) + ' of ' + n + ')' : '');
+    if (ok) {
+      const t = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      batch.forEach(f => f.beam.made = t); save();
+      pending.idx++;
+      if (pending.idx >= n) { pending = null; if (n > 1) toast('All ' + n + ' emails sent.'); }
+      else toast('Email ' + (idx + 1) + ' of ' + n + ' done. Tap Send email ' + (idx + 2) + ' of ' + n + ' for the rest.', 6000);
+    }
+    if (!cur) renderList(); else updateBar();
   }
 
   function updateBar() {
@@ -760,6 +780,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const b = beamBy(cur), s = b ? beamStatus(b) : null;
       $('barBtn').textContent = 'Send report for this beam';
       $('barStatus').textContent = s ? (s.areas + ' area' + (s.areas === 1 ? '' : 's') + (s.over ? ', ' + s.over + ' over 1/16 in.' : '') + (b.made ? '. Made ' + b.made : '')) : '';
+    } else if (pending) {
+      const p = pending, nb = p.batches.length;
+      $('barBtn').textContent = 'Send email ' + (p.idx + 1) + ' of ' + nb;
+      $('barBtn').disabled = false;
+      $('barStatus').textContent = 'Next: ' + p.batches[p.idx].map(f => f.beam.id).join(', ');
     } else {
       const n = S.beams.length;
       $('barBtn').textContent = n > 1 ? 'Send all ' + n + ' reports' : 'Send report';
@@ -781,7 +806,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   $('beamNotes').addEventListener('input', () => { beamBy(cur).notes = $('beamNotes').value; save(); });
   ['beamPhotoIn', 'beamCamIn'].forEach(id => $(id).addEventListener('change', async e => { const b = beamBy(cur); await addPhotos(e.target.files, b.photos, () => 'Beam ' + b.id + ' overview'); e.target.value = ''; renderPhotos($('beamPhotos'), b.photos); }));
   $('addArea').addEventListener('click', () => { const b = beamBy(cur); b.areas.push(newArea()); save(); renderAreas(); const all = $('areas').querySelectorAll('.area'); all[all.length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' }); });
-  $('barBtn').addEventListener('click', () => { if (cur) makeReports([beamBy(cur)]); else makeReports(S.beams); });
+  $('barBtn').addEventListener('click', () => { if (cur) { pending = null; makeReports([beamBy(cur)]); } else if (pending) sendNext(); else makeReports(S.beams); });
   const clr = $('clearAll');
   clr.addEventListener('click', async () => {
     if (!clr.dataset.armed) { clr.dataset.armed = '1'; clr.textContent = 'Tap again to clear everything'; setTimeout(() => { delete clr.dataset.armed; clr.textContent = 'Clear all beams'; }, 3500); return; }
