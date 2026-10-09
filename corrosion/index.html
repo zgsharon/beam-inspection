@@ -317,6 +317,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   .addphoto { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 46px; border: 1px dashed var(--line); border-radius: 10px; color: var(--accent); font-weight: 600; cursor: pointer; margin-top: 8px; }
   .addphoto input { display: none; }
   .photobtns { display: flex; gap: 8px; }
+  .fab { position: fixed; left: 12px; bottom: calc(78px + env(safe-area-inset-bottom)); z-index: 25; display: flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 12px 16px; font-weight: 600; font-size: 15px; box-shadow: 0 2px 10px rgba(0,0,0,.25); cursor: pointer; max-width: calc(100% - 24px); }
+  .fab input { display: none; }
+  .fab svg { width: 20px; height: 20px; flex: none; }
   .photobtns .addphoto { flex: 1; }
   .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); z-index: 20; }
   .bar .in { max-width: 640px; margin: 0 auto; display: flex; gap: 8px; align-items: center; }
@@ -360,8 +363,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     </div>
 
     <div class="card">
+      <h2>Full-size photos</h2>
+      <div class="hint" style="margin-top:0">The reports use smaller copies. The full-size originals stay on this phone until you save them, so no signal in the tank is fine. Once you have service (end of the day is fine), tap below, pick OneDrive and save to: ICG Projects &gt; ICG Internal Project Information &gt; Property Reserve &gt; 111 South Main &gt; Photo Originals.</div>
+      <div class="hint" id="origStatus"></div>
+      <button type="button" class="btn small" id="origBtn" style="margin-top:8px">Save full-size photos</button>
+    </div>
+
+    <div class="card">
       <h2>Start over</h2>
-      <div class="hint" style="margin-top:0">Clears every beam and photo from this phone. Make and send the reports first.</div>
+      <div class="hint" style="margin-top:0">Clears every beam and photo from this phone, full-size photos included. Send the reports and save the full-size photos first.</div>
       <button type="button" class="btn danger small" id="clearAll" style="margin-top:8px">Clear all beams</button>
     </div>
   </section>
@@ -389,6 +399,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   </section>
 </div>
 
+<label class="fab" id="fab" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="fabLbl">Take photo</span><input type="file" accept="image/*" capture="environment" id="fabIn"></label>
 <div class="bar"><div class="in">
   <div class="status" id="barStatus"></div>
   <button type="button" class="btn primary" id="barBtn">Send all reports</button>
@@ -411,7 +422,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         <button type="button" data-val="East" aria-pressed="false">East</button>
         <button type="button" data-val="West" aria-pressed="false">West</button>
       </div></div>
-    <div class="field"><span class="lbl">Part of beam</span>
+    <div class="field"><span class="lbl">Part of beam (tap all that apply)</span>
       <div class="chips aelem">
         <button type="button" data-val="Web" aria-pressed="false">Web</button>
         <button type="button" data-val="Flange" aria-pressed="false">Flange</button>
@@ -446,7 +457,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   const $ = id => document.getElementById(id);
   const CRIT = 0.0625;
   const CLIENT = 'Okland Construction', PROJECT = '111 Main Hat Truss Corrosion Inspection', DOC_TITLE = 'Corrosion Assessment';
-  const DB = 'beamCorrosion', ST = 'kv', PH = 'photos';
+  const DB = 'beamCorrosion', ST = 'kv', PH = 'photos', OR = 'orig';
   let S = { inspector: '', date: '', beams: [] };
   let cur = null; // uid of open beam
   const photoCache = {}; // pid -> {blob, thumb}
@@ -458,7 +469,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), ms || 3200); }
 
   // ---------- storage ----------
-  function db() { return new Promise((res, rej) => { if (!window.indexedDB) return rej(new Error('no idb')); const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => { r.result.createObjectStore(ST); r.result.createObjectStore(PH); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+  function db() { return new Promise((res, rej) => { if (!window.indexedDB) return rej(new Error('no idb')); const r = indexedDB.open(DB, 2); r.onupgradeneeded = () => { const d = r.result; [ST, PH, OR].forEach(n => { if (!d.objectStoreNames.contains(n)) d.createObjectStore(n); }); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
   async function put(store, key, val) { const d = await db(); await new Promise((res, rej) => { const tx = d.transaction(store, 'readwrite'); tx.objectStore(store).put(val, key); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); d.close(); }
   async function get(store, key) { const d = await db(); const v = await new Promise((res, rej) => { const r = d.transaction(store, 'readonly').objectStore(store).get(key); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); d.close(); return v; }
   async function del(store, key) { const d = await db(); await new Promise((res, rej) => { const tx = d.transaction(store, 'readwrite'); tx.objectStore(store).delete(key); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); d.close(); }
@@ -469,9 +480,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // ---------- model helpers ----------
   const beamBy = id => S.beams.find(b => b.uid === id);
   function newArea() { return { uid: uid(), types: [], face: '', elem: '', where: '', nominal: '', readings: [{ d: '', ut: '' }], note: '', photos: [] }; }
-  function elemOf(a) { return a.elem === 'Other' ? String(a.elemOther || '').trim() || 'other part' : a.elem; }
+  function elemsOf(a) { if (!a.elems) a.elems = a.elem ? [a.elem] : []; return a.elems; }
+  function elemOf(a) { const l = elemsOf(a).map(x => x === 'Other' ? (String(a.elemOther || '').trim() || 'other part') : x); return l.length > 1 ? l.slice(0, -1).join(', ') + ' and ' + l[l.length - 1] : (l[0] || ''); }
   function typeText(a) { const t = (a.types || []).map(x => x.toLowerCase()); return t.length > 1 ? t.slice(0, -1).join(', ') + ' and ' + t[t.length - 1] : (t[0] || ''); }
-  function areaName(a, i) { const parts = [a.face ? a.face + ' side' : '', a.elem ? elemOf(a).toLowerCase() : ''].filter(Boolean); const t = typeText(a); return 'Area ' + (i + 1) + (parts.length ? ': ' + parts.join(', ') : '') + (t ? ' (' + t + ')' : ''); }
+  function areaName(a, i) { const parts = [a.face ? a.face + ' side' : '', elemsOf(a).length ? elemOf(a).toLowerCase() : ''].filter(Boolean); const t = typeText(a); return 'Area ' + (i + 1) + (parts.length ? ': ' + parts.join(', ') : '') + (t ? ' (' + t + ')' : ''); }
   // returns list of {d, ut, loss, depth (the governing value)}
   function areaValues(a) {
     const nom = num(a.nominal), out = [];
@@ -513,7 +525,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       row.addEventListener('click', () => openBeam(b.uid, true));
       L.appendChild(row);
     });
-    updateBar();
+    updateBar(); updateOrig();
   }
   function addBeam() {
     const v = $('newBeam').value.trim().toUpperCase();
@@ -531,9 +543,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     $('beamTitle').textContent = b.id || 'Beam';
     $('beamId').value = b.id; $('beamNotes').value = b.notes;
     renderPhotos($('beamPhotos'), b.photos);
-    renderAreas(); updateBar(); window.scrollTo(0, 0);
+    renderAreas(); updateBar(); window.scrollTo(0, 0); updateFab();
   }
-  function showList() { cur = null; $('beamView').hidden = true; $('listView').hidden = false; renderList(); window.scrollTo(0, 0); }
+  function showList() { cur = null; $('beamView').hidden = true; $('listView').hidden = false; renderList(); window.scrollTo(0, 0); updateFab(); }
 
   function renderAreas() {
     const b = beamBy(cur), box = $('areas'); box.innerHTML = '';
@@ -549,11 +561,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       g.querySelectorAll('button').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.val === a[key])));
       g.addEventListener('click', e => { const btn = e.target.closest('button'); if (!btn) return; a[key] = a[key] === btn.dataset.val ? '' : btn.dataset.val; g.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.val === a[key]))); title(); save(); });
     };
-    chips('.aface', 'face'); chips('.aelem', 'elem');
+    chips('.aface', 'face');
+    const eg = q('.aelem');
+    const drawE = () => eg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(elemsOf(a).includes(x.dataset.val))));
+    drawE();
+    eg.addEventListener('click', e => { const btn = e.target.closest('button'); if (!btn) return; const v = btn.dataset.val, l = elemsOf(a); a.elems = l.includes(v) ? l.filter(x => x !== v) : l.concat(v); a.elem = a.elems.join(','); drawE(); title(); save(); });
     const eo = q('.aelemother');
-    const showEo = () => { eo.hidden = a.elem !== 'Other'; };
+    const showEo = () => { eo.hidden = !elemsOf(a).includes('Other'); };
     eo.value = a.elemOther || ''; showEo();
-    q('.aelem').addEventListener('click', () => { showEo(); if (a.elem === 'Other') eo.focus(); });
+    q('.aelem').addEventListener('click', () => { showEo(); if (elemsOf(a).includes('Other') && !eo.value) eo.focus(); });
     eo.addEventListener('input', () => { a.elemOther = eo.value; title(); save(); });
     if (!a.types) a.types = [];
     const tg = q('.atype');
@@ -598,14 +614,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const delBtn = q('.adel');
     delBtn.addEventListener('click', () => {
       if (!delBtn.dataset.armed) { delBtn.dataset.armed = '1'; delBtn.textContent = 'Tap again to delete'; setTimeout(() => { delete delBtn.dataset.armed; delBtn.textContent = 'Delete area'; }, 3000); return; }
-      a.photos.forEach(p => del(PH, p.pid).catch(() => {}));
+      a.photos.forEach(p => { del(PH, p.pid).catch(() => {}); del(OR, p.pid).catch(() => {}); });
       b.areas.splice(i, 1); save(); renderAreas();
     });
     renderPhotos(q('.aphotos'), a.photos, () => areaName(a, i));
     ['.aphotoin', '.acamin'].forEach(sel => q(sel).addEventListener('change', async e => { await addPhotos(e.target.files, a.photos, () => defaultCaption(a)); e.target.value = ''; renderPhotos(q('.aphotos'), a.photos); }));
     return el;
   }
-  function defaultCaption(a) { const parts = [a.face ? a.face + ' side' : '', a.elem ? elemOf(a).toLowerCase() : ''].filter(Boolean); const t = typeText(a); const what = t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Corrosion'; return parts.length ? what + ' on ' + parts.join(' ').toLowerCase() : what; }
+  function defaultCaption(a) { const parts = [a.face ? a.face + ' side' : '', elemsOf(a).length ? elemOf(a).toLowerCase() : ''].filter(Boolean); const t = typeText(a); const what = t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Corrosion'; return parts.length ? what + ' on ' + parts.join(' ').toLowerCase() : what; }
 
   // ---------- photos ----------
   async function processFile(file) {
@@ -630,7 +646,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const p = await processFile(f), pid = uid();
         photoCache[pid] = p;
         await put(PH, pid, { buf: await p.blob.arrayBuffer(), thumb: p.thumb }).catch(() => {});
-        list.push({ pid, caption: capFn ? capFn() : 'Beam overview' });
+        let orig = false;
+        try { await put(OR, pid, { buf: await f.arrayBuffer(), type: f.type || 'image/jpeg', size: f.size }); orig = f.size; } catch (e) { console.warn('original not kept', e); }
+        list.push({ pid, caption: capFn ? capFn() : 'Beam overview', orig, origSaved: false });
       } catch (e) { toast('Could not read one photo.'); }
     }
     save(); renderListIfOpen();
@@ -652,7 +670,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const cap = document.createElement('input'); cap.type = 'text'; cap.value = ph.caption; cap.setAttribute('aria-label', 'Caption');
       cap.addEventListener('input', () => { ph.caption = cap.value; save(); });
       const x = document.createElement('button'); x.type = 'button'; x.innerHTML = '&times;'; x.setAttribute('aria-label', 'Remove photo');
-      x.addEventListener('click', () => { list.splice(k, 1); del(PH, ph.pid).catch(() => {}); save(); renderPhotos(box, list); updateBar(); });
+      x.addEventListener('click', () => { list.splice(k, 1); del(PH, ph.pid).catch(() => {}); del(OR, ph.pid).catch(() => {}); save(); renderPhotos(box, list); updateBar(); });
       meta.append(cap, x); d.append(img, meta); box.appendChild(d);
     });
   }
@@ -691,7 +709,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         avg: w.length ? f3(w.reduce((p, c) => p + c, 0) / w.length) : '', spec: '≤ 0.0625', result: st.kind === 'over' ? 'fail' : 'pass',
         resultText: st.kind === 'over' ? 'Over criterion' : st.kind === 'ok' ? 'Within' : 'Not measured' });
       let narr = '';
-      const loc = [a.face ? 'the ' + a.face.toLowerCase() + ' side' : '', a.elem ? 'the ' + elemOf(a).toLowerCase() : ''].filter(Boolean).join(', ');
+      const loc = [a.face ? 'the ' + a.face.toLowerCase() + ' side' : '', elemsOf(a).length ? 'the ' + elemOf(a).toLowerCase() : ''].filter(Boolean).join(', ');
       if (typeText(a)) narr += 'Damage type: ' + typeText(a) + '. ';
       narr += 'This area is on ' + (loc || 'the beam') + (a.where.trim() ? ', ' + a.where.trim().replace(/[.]$/, '') : '') + '. ';
       if (v.length) {
@@ -720,7 +738,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const out = [];
     if (!b.id) out.push('has no beam number');
     if (!b.areas.length) out.push('has no corrosion areas');
-    b.areas.forEach((a, i) => { if (!a.face || !a.elem) out.push('Area ' + (i + 1) + ' is missing the side or part of beam'); if (!(a.types || []).length) out.push('Area ' + (i + 1) + ' has no type of damage picked'); });
+    b.areas.forEach((a, i) => { if (!a.face || !elemsOf(a).length) out.push('Area ' + (i + 1) + ' is missing the side or part of beam'); if (!(a.types || []).length) out.push('Area ' + (i + 1) + ' has no type of damage picked'); });
     return out;
   }
   let busy = false;
@@ -793,6 +811,65 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
   }
 
+  // ---------- full-size originals ----------
+  function origList(onlyUnsaved) {
+    const out = [];
+    S.beams.forEach(b => {
+      const id = (b.id || 'Beam').replace(/[^A-Za-z0-9_-]+/g, '');
+      b.photos.forEach((p, k) => { if (p.orig && (!onlyUnsaved || !p.origSaved)) out.push({ p, name: id + '_Overview_' + String(k + 1).padStart(2, '0') }); });
+      b.areas.forEach((a, i) => a.photos.forEach((p, k) => { if (p.orig && (!onlyUnsaved || !p.origSaved)) out.push({ p, name: id + '_Area' + (i + 1) + '_' + String(k + 1).padStart(2, '0') }); }));
+    });
+    return out;
+  }
+  function mb(n) { return (n / 1048576).toFixed(n > 10485760 ? 0 : 1) + ' MB'; }
+  let origPending = null;
+  function updateOrig() {
+    const all = origList(false), left = origList(true), size = left.reduce((t, x) => t + (x.p.orig || 0), 0);
+    $('origStatus').textContent = !all.length ? 'No full-size photos on this phone yet.' : left.length ? left.length + ' of ' + all.length + ' not saved yet (' + mb(size) + ').' : 'All ' + all.length + ' saved.';
+    $('origBtn').textContent = origPending ? 'Save batch ' + (origPending.idx + 1) + ' of ' + origPending.batches.length : 'Save full-size photos';
+    $('origBtn').disabled = !left.length && !origPending;
+  }
+  async function saveOriginals() {
+    if (!origPending) {
+      const left = origList(true); if (!left.length) return;
+      const MAXO = 90 * 1048576, batches = []; let curB = [], size = 0;
+      left.forEach(x => { if (curB.length && size + x.p.orig > MAXO) { batches.push(curB); curB = []; size = 0; } curB.push(x); size += x.p.orig; });
+      if (curB.length) batches.push(curB);
+      origPending = { batches, idx: 0 };
+    }
+    const batch = origPending.batches[origPending.idx], files = [];
+    for (const x of batch) {
+      const o = await get(OR, x.p.pid).catch(() => null); if (!o || !o.buf) continue;
+      const ext = /png/.test(o.type) ? 'png' : /heic|heif/.test(o.type) ? 'heic' : 'jpg';
+      files.push({ file: new File([o.buf], x.name + '.' + ext, { type: o.type }), blob: new Blob([o.buf], { type: o.type }), filename: x.name + '.' + ext });
+    }
+    const ok = files.length ? await deliver(files, 'Full-size beam photos') : true;
+    if (ok) {
+      batch.forEach(x => x.p.origSaved = true); save();
+      origPending.idx++;
+      if (origPending.idx >= origPending.batches.length) { origPending = null; toast('Full-size photos saved.'); }
+    }
+    updateOrig();
+  }
+  // floating camera button: adds to the area on screen
+  let fabTarget = null;
+  function updateFab() {
+    const fab = $('fab'); if (!cur) { fab.hidden = true; return; }
+    fab.hidden = false;
+    const els = [...$('areas').querySelectorAll('.area')], mid = window.innerHeight * 0.5;
+    let idx = -1; els.forEach((el, i) => { if (el.getBoundingClientRect().top < mid) idx = i; });
+    fabTarget = idx;
+    $('fabLbl').textContent = idx < 0 ? 'Photo: overview' : 'Photo: Area ' + (idx + 1);
+  }
+  window.addEventListener('scroll', () => requestAnimationFrame(updateFab), { passive: true });
+  $('fabIn').addEventListener('change', async e => {
+    const b = beamBy(cur); if (!b) return;
+    if (fabTarget < 0 || !b.areas[fabTarget]) { await addPhotos(e.target.files, b.photos, () => 'Beam ' + b.id + ' overview'); renderPhotos($('beamPhotos'), b.photos); }
+    else { const a = b.areas[fabTarget]; await addPhotos(e.target.files, a.photos, () => defaultCaption(a)); const box = $('areas').querySelectorAll('.area')[fabTarget]; if (box) renderPhotos(box.querySelector('.aphotos'), a.photos); toast('Added to Area ' + (fabTarget + 1) + '.'); }
+    e.target.value = '';
+  });
+  $('origBtn').addEventListener('click', () => saveOriginals().catch(err => toast('Could not save photos: ' + (err.message || err), 6000)));
+
   // ---------- wiring ----------
   function inspList() { return String(S.inspector || '').split(' and ').filter(Boolean); }
   function drawInsp() { const l = inspList(); $('inspChips').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(l.includes(x.dataset.val)))); }
@@ -809,9 +886,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   $('barBtn').addEventListener('click', () => { if (cur) { pending = null; makeReports([beamBy(cur)]); } else if (pending) sendNext(); else makeReports(S.beams); });
   const clr = $('clearAll');
   clr.addEventListener('click', async () => {
-    if (!clr.dataset.armed) { clr.dataset.armed = '1'; clr.textContent = 'Tap again to clear everything'; setTimeout(() => { delete clr.dataset.armed; clr.textContent = 'Clear all beams'; }, 3500); return; }
+    if (!clr.dataset.armed) { clr.dataset.armed = '1'; const un = origList(true).length; clr.textContent = un ? un + ' full-size photos not saved. Tap again to clear anyway' : 'Tap again to clear everything'; setTimeout(() => { delete clr.dataset.armed; clr.textContent = 'Clear all beams'; }, 3500); return; }
     delete clr.dataset.armed; clr.textContent = 'Clear all beams';
-    S.beams = []; S.date = todayIso(); $('date').value = S.date; await clearStore(PH).catch(() => {}); save(); renderList(); toast('Cleared.');
+    S.beams = []; S.date = todayIso(); $('date').value = S.date; await clearStore(PH).catch(() => {}); await clearStore(OR).catch(() => {}); save(); renderList(); toast('Cleared.');
   });
 
   (async function init() {
